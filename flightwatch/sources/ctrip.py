@@ -155,7 +155,8 @@ class Probe:
                 "() => /已选去程/.test(document.body.innerText) && /选择返程/.test(document.body.innerText)",
                 timeout=self.timeout * 1000,
             )
-            self.page.wait_for_timeout(2500)
+            self.page.wait_for_selector(".flight-item", timeout=15000)
+            self.page.wait_for_timeout(1500)
         except Exception:  # noqa: BLE001
             self._check_block()
             raise NotRendered("返程列表没出来")
@@ -163,7 +164,11 @@ class Probe:
 
         ret_cards = [c for c in self.page.evaluate(_CARDS_JS) if c["price"]]
         if not ret_cards:
-            raise NotRendered("返程列表为空")
+            # 返程列表偶尔渲染得慢，再兜 4 秒
+            self.page.wait_for_timeout(4000)
+            ret_cards = [c for c in self.page.evaluate(_CARDS_JS) if c["price"]]
+        if not ret_cards:
+            raise NotRendered("返程列表为空（可能是限流或该日无票）")
 
         qr_ret = [c for c in ret_cards if c["air"] == "卡塔尔航空" and not c["multi"]]
         all_min = min(c["price"] for c in ret_cards)

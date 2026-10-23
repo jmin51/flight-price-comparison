@@ -103,7 +103,7 @@
       <p class="d" id="mCurrentDate">—</p>
     </div>
     <div class="metric">
-      <p class="k">国内最低 · 同程</p>
+      <p class="k">国内最低 · 双程 QR</p>
       <p class="v" id="mOta">—</p>
       <p class="d" id="mOtaNote">—</p>
     </div>
@@ -184,11 +184,12 @@ function renderStatus(s) {
   $('mOffers').textContent = m.offers != null ? m.offers.toLocaleString('zh-CN') : '—';
   $('mRuns').textContent = m.runs != null ? `${m.runs} 次运行` : '—';
 
-  const dom = m.domestic || (s.ota ? { price: s.ota.price, dep: s.ota.dep, ret: s.ota.ret } : null);
+  const dom = m.domestic || null;
+  const plat = { ctrip: '携程', fliggy: '飞猪' };
   $('mOta').textContent = dom ? money(dom.price) : '—';
   $('mOtaNote').textContent = dom
-    ? `${shortDate(dom.dep)} → ${shortDate(dom.ret)} · 单程合成价`
-    : '还没抓到同程数据';
+    ? `${shortDate(dom.dep)} → ${shortDate(dom.ret)} · ${plat[dom.source] || ''}实取价`
+    : '携程/飞猪还没核到双程 QR 价';
 
   const pr = s.progress || {};
   const lr = m.last_run;

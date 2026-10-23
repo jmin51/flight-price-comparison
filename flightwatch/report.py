@@ -208,50 +208,78 @@ def build(
         </div>"""
         )
 
-    # ---- 国内平台 Top5（同程）----
+    # ---- 国内平台 Top5（只算「去返都是卡塔尔」的真实可订价）----
     ly_row = next((r for r in (ota_rows or []) if r.get("key") == "ly"), None)
     ly_offers = (ly_row or {}).get("offers") or []
-    dom_best = ly_offers[0]["price"] if ly_offers else None
+    ly_best = ly_offers[0]["price"] if ly_offers else None
+
+    dom_pick: dict[tuple[str, str], dict[str, Any]] = {}
+    for r in (ctrip_rows or []):
+        if r.get("qr_total"):
+            dom_pick[(r["dep_date"], r["ret_date"])] = {
+                "price": r["qr_total"], "platform": "携程", "all_min": r.get("all_min")}
+    for r in (fliggy_rows or []):
+        qp = r.get("qr_price")
+        if not qp:
+            continue
+        key = (r["dep_date"], r["ret_date"])
+        cur = dom_pick.get(key)
+        if cur is None or qp < cur["price"]:
+            dom_pick[key] = {"price": qp, "platform": "飞猪", "all_min": r.get("all_min")}
+
+    dom_sorted = sorted(dom_pick.items(), key=lambda kv: kv[1]["price"])[: cfg.alerts.get("top_n", 5)]
+    dom_best = dom_sorted[0][1]["price"] if dom_sorted else None
 
     dom_cards = []
-    for i, o in enumerate(ly_offers[: cfg.alerts.get("top_n", 5)], 1):
-        gap = o.get("gap")
-        if gap is None:
-            try:
-                gap = (date.fromisoformat(o["ret"]) - date.fromisoformat(o["dep"])).days
-            except ValueError:
-                gap = None
+    for i, ((dep, ret), info) in enumerate(dom_sorted, 1):
+        try:
+            gap = (date.fromisoformat(ret) - date.fromisoformat(dep)).days
+        except ValueError:
+            gap = None
         diff = ""
         if best_price:
-            d = o["price"] - best_price
-            word = "高" if d > 0 else "低"
-            diff = f'<span class="tag muted">比 Google 最低 {word} ¥{abs(d):,}</span>'
+            d = info["price"] - best_price
+            if d > 0:
+                diff = f'<span class="tag muted">比 Google 高 ¥{d:,}</span>'
+            elif d < 0:
+                diff = f'<span class="tag drop">比 Google 低 ¥{-d:,}</span>'
+            else:
+                diff = '<span class="tag">与 Google 持平</span>'
         tags = [
-            '<span class="tag">同程旅行</span>',
+            f'<span class="tag">{info["platform"]}</span>',
             f'<span class="tag">{gap} 天</span>' if gap else "",
-            '<span class="tag muted">单程合成价 · 非同一航司</span>',
+            '<span class="tag">去返都是 QR</span>',
             diff,
         ]
         dom_cards.append(
             f"""
         <div class="card domestic">
           <div class="rank">#{i}</div>
-          <div class="price">{_money(o['price'])} <small>往返含税</small></div>
-          <div class="dates">{o['dep']} → {o['ret']}</div>
-          <div class="route">去程最低 + 返程最低相加，去返可能不是同一家航司</div>
+          <div class="price">{_money(info['price'])} <small>往返含税</small></div>
+          <div class="dates">{dep} → {ret}</div>
+          <div class="route">{info["platform"]} 实取价，去程与返程均为卡塔尔航空</div>
           <div class="tags">{''.join(t for t in tags if t)}</div>
           <div class="links">
-            <a href="{_link_tc(o['dep'], o['ret'], origin, dest)}" target="_blank">同程旅行</a>
-            <a href="{_link_trip(o['dep'], o['ret'], origin, dest)}" target="_blank">携程国际</a>
-            <a href="{_link_fliggy(o['dep'], o['ret'])}" target="_blank">飞猪</a>
+            <a href="{_link_tc(dep, ret, origin, dest)}" target="_blank">同程旅行</a>
+            <a href="{_link_trip(dep, ret, origin, dest)}" target="_blank">携程国际</a>
+            <a href="{_link_fliggy(dep, ret)}" target="_blank">飞猪</a>
           </div>
         </div>"""
+        )
+
+    ly_hint = ""
+    if ly_best:
+        ly_hint = (
+            '<div class="sub" style="margin-top:-4px;margin-bottom:10px;">'
+            f'参考：同程全航司最低 {_money(ly_best)}（去程最低＋返程最低合成，'
+            '<strong>去返可能不是同一家航司</strong>，口径不同，不参与本榜）。</div>'
         )
 
     domestic_html = (
         '<div class="cards">' + "".join(dom_cards) + "</div>"
         if dom_cards
-        else '<p style="color:#9ca3af;font-size:13px;">同程这次没取到报价（接口受限，或窗口内无票）。</p>'
+        else ('<p style="color:#9ca3af;font-size:13px;">携程/飞猪这次没核到「双程都是卡塔尔」的价，'
+              '所以国内榜为空 —— 不是没有票，是没核到。</p>')
     )
 
     # ---- 携程核价（国内站，去返双程 QR）----
@@ -357,6 +385,17 @@ def build(
     ref = ranked[0] if ranked else ({"dep": ly_offers[0]["dep"], "ret": ly_offers[0]["ret"]}
                                     if ly_offers else None)
     other_trs = []
+    if ly_best:
+        b = ly_offers[0]
+        other_trs.append(
+            f"<tr><td style='padding:9px 12px;'><b>同程旅行</b></td>"
+            f"<td style='padding:9px 12px;color:#6b7280;'>¥{ly_best:,}</td>"
+            f"<td style='padding:9px 12px;color:#6b7280;font-size:12px;'>"
+            f"全航司最低，去程+返程单程合成，去返可能不同航司（仅参考）</td>"
+            f"<td style='padding:9px 12px;'>"
+            f"<a href='{_link_tc(b['dep'], b['ret'], origin, dest)}' target='_blank'>打开同程</a>"
+            f" <span style='color:#9ca3af;'>（{b['dep']} → {b['ret']}）</span></td></tr>"
+        )
     for r in (ota_rows or []):
         key = r.get("key")
         if key not in ("trip", "fliggy"):
@@ -382,7 +421,7 @@ def build(
     other_html = ""
     if other_trs:
         other_html = f"""
-<h2>其他国内平台 <span class="h2note">反爬拦截，只提供跳转，不提供价格</span></h2>
+<h2>其他国内平台 <span class="h2note">同程为全航司参考价；携程国际/天巡等只给跳转</span></h2>
 <table class="list"><thead><tr>
   <th>平台</th><th>价格</th><th>说明</th><th>手动查看</th>
 </tr></thead><tbody>{''.join(other_trs)}</tbody></table>
@@ -500,14 +539,15 @@ border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
 <div class="sub">扫描时间 {now}　·　窗口 {win_start} ~ {win_last}{note_html}　·　
 间隔 {"/".join(map(str, cfg.window['gap_days']))} 天　·　
 有效组合 {len(ranked)}/{total_combos}　·　耗时 {elapsed:.0f}s　·　
-国外最低 <b>{_money(best_price)}</b>　·　国内最低 <b>{_money(dom_best)}</b></div>
+国外最低 <b>{_money(best_price)}</b>　·　国内最低（双程 QR）<b>{_money(dom_best)}</b></div>
 
 {notice_html}
 
 <h2>国外平台 · Top 5 <span class="h2note">Google Flights · 卡塔尔航空 · 多哈中转 · 最多 1 次中转</span></h2>
 <div class="cards">{''.join(cards) if cards else '<p style="color:#9ca3af;font-size:13px;">本次没有取到 Google 价格。</p>'}</div>
 
-<h2>国内平台 · Top 5 <span class="h2note">同程旅行 · 全航司 · 去程+返程单程日历合成</span></h2>
+<h2>国内平台 · Top 5 <span class="h2note">携程 / 飞猪实取价 · 去返双程均为卡塔尔</span></h2>
+{ly_hint}
 {domestic_html}
 
 {ctrip_html}

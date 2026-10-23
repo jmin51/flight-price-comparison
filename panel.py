@@ -256,13 +256,14 @@ def _metrics() -> dict:
             if best:
                 out["current"] = {"price": int(best["p"]), "dep": best["dep_date"], "ret": best["ret_date"]}
             dom = conn.execute(
-                "SELECT dep_date, ret_date, MIN(price) p FROM offers WHERE run_id=? "
-                "AND price IS NOT NULL AND source='ly' "
+                "SELECT dep_date, ret_date, MIN(price) p, source FROM offers WHERE run_id=? "
+                "AND price IS NOT NULL AND source IN ('ctrip','fliggy') "
                 "GROUP BY dep_date, ret_date ORDER BY p ASC LIMIT 1",
                 (run["id"],),
             ).fetchone()
             if dom:
-                out["domestic"] = {"price": int(dom["p"]), "dep": dom["dep_date"], "ret": dom["ret_date"]}
+                out["domestic"] = {"price": int(dom["p"]), "dep": dom["dep_date"],
+                                   "ret": dom["ret_date"], "source": dom["source"]}
     except sqlite3.Error:
         pass
     finally:
