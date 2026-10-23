@@ -21,6 +21,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 import webbrowser
 from datetime import datetime
 from pathlib import Path
@@ -61,6 +62,7 @@ STATE: dict = {
 }
 LOCK = threading.Lock()
 SUBSCRIBERS: set[queue.Queue] = set()
+_REUSED = False
 
 RE_PROGRESS = re.compile(r"(\d+)/(\d+)\s+(\d{4}-\d{2}-\d{2})→(\d{4}-\d{2}-\d{2})\s+(\S+)")
 RE_COMBO_TOTAL = re.compile(r"组合\s+(\d+)")
@@ -437,7 +439,27 @@ def api_shutdown():
     return jsonify({"ok": True})
 
 
+def _port_busy(port: int) -> bool:
+    s = socket.socket()
+    s.settimeout(0.4)
+    try:
+        return s.connect_ex(("127.0.0.1", port)) == 0
+    finally:
+        s.close()
+
+
+def _is_our_panel(port: int) -> bool:
+    """判断该端口上跑的是不是我们自己的面板（能返回 /api/status 的 JSON）。"""
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=2) as r:
+            data = json.loads(r.read().decode("utf-8", "ignore"))
+        return isinstance(data, dict) and "metrics" in data and "proxy" in data
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def main() -> None:
+    global _REUSED
     port = 5001
     no_browser = False
     argv = sys.argv[1:]
@@ -447,35 +469,44 @@ def main() -> None:
         if a == "--no-browser":
             no_browser = True
 
+    want = port
+
+    # 1) 已经有面板在跑 → 直接复用，不再起第二个实例
+    if _is_our_panel(want):
+        url = f"http://127.0.0.1:{want}/"
+        _REUSED = True
+        print("=" * 56)
+        print("  面板已经在运行，直接打开页面")
+        print(f"  地址：{url}")
+        print("  要重启：先关掉原来那个黑窗口（或在页面上点「停止服务」）")
+        print("=" * 56)
+        if not no_browser:
+            webbrowser.open(url)
+        return
+
+    # 2) 端口被别的程序占着 → 往后找空的
+    for p in range(want, want + 10):
+        if not _port_busy(p):
+            port = p
+            break
+    else:
+        print(f"  {want}~{want + 9} 全被占用，无法启动面板。")
+        return
+
     url = f"http://127.0.0.1:{port}/"
     print("=" * 56)
     print("  机票监控 · 本地控制面板")
-    print(f"  地址：{url}")
+    print(f"  地址：{url}" + ("" if port == want else f"（{want} 被其他程序占用）"))
     print("  关掉这个窗口即停止服务（扫描会一起中断）")
     print("=" * 56)
 
     if not no_browser:
-        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
-
-    # 端口被占（上次没关干净）就往后找一个空的
-    for p in range(port, port + 10):
-        probe = socket.socket()
-        try:
-            busy = probe.connect_ex(("127.0.0.1", p)) == 0
-        finally:
-            probe.close()
-        if busy:
-            print(f"  端口 {p} 已被占用，换下一个…")
-            continue
-        if p != port:
-            print(f"  实际地址：http://127.0.0.1:{p}/")
-            if not no_browser:
-                threading.Timer(0.8, lambda u=f"http://127.0.0.1:{p}/": webbrowser.open(u)).start()
-        port = p
-        break
+        threading.Timer(1.0, lambda u=url: webbrowser.open(u)).start()
 
     app.run(host="127.0.0.1", port=port, threaded=True, debug=False, use_reloader=False)
 
 
 if __name__ == "__main__":
     main()
+    if _REUSED:
+        raise SystemExit(3)
