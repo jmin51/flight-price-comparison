@@ -155,6 +155,7 @@ def build(
     fliggy_note: str = "",
     ctrip_rows: list[dict[str, Any]] | None = None,
     ctrip_note: str = "",
+    ctrip_matrix: dict[tuple[str, int], int] | None = None,
 ) -> Path:
     route = cfg.route
     origin = route["origins"][0]
@@ -428,20 +429,31 @@ def build(
 </tr></thead><tbody>{''.join(other_trs)}</tbody></table>
 """
 
-    # ---- 价格矩阵 ----
-    dep_dates = sorted({d for (d, _g) in matrix.keys()})
-    gaps = sorted({g for (_d, g) in matrix.keys()})
+    # ---- 价格矩阵（Google 一行价 + 携程双程 QR 副价）----
+    cm: dict[tuple[str, int], int] = ctrip_matrix or {}
+    dep_dates = sorted({d for (d, _g) in matrix.keys()} | {d for (d, _g) in cm.keys()})
+    gaps = sorted({g for (_d, g) in matrix.keys()} | {g for (_d, g) in cm.keys()})
     head = "".join(f"<th>间隔 {g} 天</th>" for g in gaps)
     rows_html = []
     for d in dep_dates:
         tds = [f'<td class="day">{d[5:]}</td>']
         for g in gaps:
             p = matrix.get((d, g))
-            if p is None:
+            c = cm.get((d, g))
+            if p is None and c is None:
                 tds.append('<td style="background:#fafafa;color:#d1d5db">—</td>')
+                continue
+            base = p if p is not None else c
+            bg, fg = scale.get(base, ("#eef3f0", "#444"))
+            if p is not None and c is not None:
+                sub = (f'<div style="font-size:10px;line-height:1.25;opacity:.82;'
+                       f'margin-top:2px;font-weight:400;">携程 {c:,}</div>')
+            elif p is None:
+                sub = ('<div style="font-size:10px;line-height:1.25;opacity:.82;'
+                       'margin-top:2px;font-weight:400;">携程</div>')
             else:
-                bg, fg = scale.get(p, ("#eef3f0", "#444"))
-                tds.append(f'<td style="background:{bg};color:{fg}">{p:,}</td>')
+                sub = ""
+            tds.append(f'<td style="background:{bg};color:{fg}">{base:,}{sub}</td>')
         rows_html.append("<tr>" + "".join(tds) + "</tr>")
 
     # ---- 全量列表 ----
@@ -560,6 +572,10 @@ border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
 {verify_html}
 
 <h2>价格矩阵（行 = 出发日，列 = 间隔天数）</h2>
+<div class="sub" style="margin-top:-6px;">
+上排深色 = Google 含税展示价；下排浅色 = <strong>携程双程卡塔尔实取价</strong>。
+携程只核 Top 组合，没核到的格子不显示副价（不是无票）。
+</div>
 <table class="matrix"><thead><tr><th></th>{head}</tr></thead>
 <tbody>{''.join(rows_html)}</tbody></table>
 

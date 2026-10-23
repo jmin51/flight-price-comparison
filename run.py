@@ -420,9 +420,21 @@ def main() -> int:
         ctrip_note = "携程这次没取到价：可能是该组没有卡塔尔舱位，或被风控拦了。"
 
     matrix = {(o["dep_date"], o["gap_days"]): o["price"] for o in offers}
+
+    # 携程矩阵：只覆盖已核价的组合，剩余格子留空
+    ctrip_matrix: dict[tuple[str, int], int] = {}
+    for r in ctrip_rows:
+        if not r.get("qr_total"):
+            continue
+        try:
+            gap_c = (date.fromisoformat(r["ret_date"]) - date.fromisoformat(r["dep_date"])).days
+        except (ValueError, KeyError):
+            continue
+        ctrip_matrix[(r["dep_date"], gap_c)] = int(r["qr_total"])
+
     path = report.build(cfg, run_id, offers, matrix, prev_prices, hist_min, elapsed, failures,
                         len(all_combos), window_info, verify_results, ota_rows, fliggy_rows,
-                        fliggy_note, ctrip_rows, ctrip_note)
+                        fliggy_note, ctrip_rows, ctrip_note, ctrip_matrix)
     print(f"报告：{path}")
     print(f"库内累计 {store.stats()['offers']} 条报价 / {store.stats()['runs']} 次运行")
 
