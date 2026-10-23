@@ -145,6 +145,28 @@ class Store:
         ).fetchall()
         return [(r["dep_date"], r["ret_date"]) for r in rows]
 
+    def latest_by_combo(self, source: str, max_age_days: int | None = None) -> dict[tuple[str, str], dict[str, Any]]:
+        """每个 (去程, 返程) 组合最近一次该平台的报价。
+
+        这是"越搜越丰富"的基础：今天核 6 组、明天核另外 6 组，
+        攒下来就能铺满整个窗口。max_age_days 用于丢弃过期价。
+        """
+        sql = """SELECT dep_date, ret_date, price, fetched_at FROM offers
+                 WHERE source=? AND price IS NOT NULL
+                 ORDER BY fetched_at DESC, id DESC"""
+        out: dict[tuple[str, str], dict[str, Any]] = {}
+        cutoff = None
+        if max_age_days and max_age_days > 0:
+            cutoff = (datetime.now() - timedelta(days=int(max_age_days))).isoformat(timespec="seconds")
+        for r in self._conn.execute(sql, (source,)):
+            key = (r["dep_date"], r["ret_date"])
+            if key in out:
+                continue
+            if cutoff and (r["fetched_at"] or "") < cutoff:
+                continue
+            out[key] = {"price": int(r["price"]), "at": r["fetched_at"] or ""}
+        return out
+
     def best_of_run(self, run_id: int, source: str = "google") -> dict[str, Any] | None:
         row = self._conn.execute(
             """SELECT dep_date, ret_date, MIN(price) AS p FROM offers

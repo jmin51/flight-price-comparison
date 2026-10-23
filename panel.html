@@ -182,7 +182,8 @@ function renderStatus(s) {
   $('mHist').textContent = money(m.hist && m.hist.price);
   $('mHistDate').textContent = m.hist ? `${m.hist.dep} → ${m.hist.ret}` : '—';
   $('mOffers').textContent = m.offers != null ? m.offers.toLocaleString('zh-CN') : '—';
-  $('mRuns').textContent = m.runs != null ? `${m.runs} 次运行` : '—';
+  $('mRuns').textContent = (m.runs != null ? `${m.runs} 次运行` : '—')
+    + (m.ctrip_covered ? ` · 携程 ${m.ctrip_covered} 组` : '');
 
   const dom = m.domestic || null;
   const plat = { ctrip: '携程', fliggy: '飞猪' };

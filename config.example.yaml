@@ -119,6 +119,7 @@ ctrip:
   headless: true          # 想看着它跑就改 false
   timeout: 45             # 单组等列表渲染的最长秒数
   delay_seconds: [2.0, 3.5]
+  max_age_days: 7         # 本地实价库里超过这个天数的旧价不再显示
 
 # ---------- 飞猪核价（PC 站免登录，真浏览器逐组核）----------
 fliggy:

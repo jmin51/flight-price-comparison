@@ -421,20 +421,28 @@ def main() -> int:
 
     matrix = {(o["dep_date"], o["gap_days"]): o["price"] for o in offers}
 
-    # 携程矩阵：只覆盖已核价的组合，剩余格子留空
+    # 携程矩阵：从本地实价库取「每个组合最近一次核价」，越搜越满
     ctrip_matrix: dict[tuple[str, int], int] = {}
-    for r in ctrip_rows:
-        if not r.get("qr_total"):
-            continue
+    ctrip_at: dict[tuple[str, int], str] = {}
+    try:
+        ctrip_hist = store.latest_by_combo("ctrip", max_age_days=int(c_cfg.get("max_age_days", 7)))
+    except Exception:  # noqa: BLE001
+        ctrip_hist = {}
+    for (dep_h, ret_h), v in ctrip_hist.items():
         try:
-            gap_c = (date.fromisoformat(r["ret_date"]) - date.fromisoformat(r["dep_date"])).days
-        except (ValueError, KeyError):
+            gap_h = (date.fromisoformat(ret_h) - date.fromisoformat(dep_h)).days
+        except ValueError:
             continue
-        ctrip_matrix[(r["dep_date"], gap_c)] = int(r["qr_total"])
+        ctrip_matrix[(dep_h, gap_h)] = int(v["price"])
+        at = (v.get("at") or "")[:10]
+        ctrip_at[(dep_h, gap_h)] = at[5:] if len(at) >= 10 else ""
+    if ctrip_matrix:
+        print(f"  携程实价库：已覆盖 {len(ctrip_matrix)}/{len(all_combos)} 个组合"
+              f"（最近 {int(c_cfg.get('max_age_days', 7))} 天内）")
 
     path = report.build(cfg, run_id, offers, matrix, prev_prices, hist_min, elapsed, failures,
                         len(all_combos), window_info, verify_results, ota_rows, fliggy_rows,
-                        fliggy_note, ctrip_rows, ctrip_note, ctrip_matrix)
+                        fliggy_note, ctrip_rows, ctrip_note, ctrip_matrix, ctrip_at)
     print(f"报告：{path}")
     print(f"库内累计 {store.stats()['offers']} 条报价 / {store.stats()['runs']} 次运行")
 

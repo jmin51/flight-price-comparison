@@ -156,6 +156,7 @@ def build(
     ctrip_rows: list[dict[str, Any]] | None = None,
     ctrip_note: str = "",
     ctrip_matrix: dict[tuple[str, int], int] | None = None,
+    ctrip_at: dict[tuple[str, int], str] | None = None,
 ) -> Path:
     route = cfg.route
     origin = route["origins"][0]
@@ -446,7 +447,8 @@ def build(
         except ValueError:
             axis_dates = None
 
-    def _matrix_html(mx: dict[tuple[str, int], int]) -> str:
+    def _matrix_html(mx: dict[tuple[str, int], int],
+                     notes: dict[tuple[str, int], str] | None = None) -> str:
         if not mx:
             return '<p style="color:#9ca3af;font-size:13px;">本次没有数据。</p>'
         ds = axis_dates or sorted({d for (d, _g) in mx.keys()})
@@ -462,13 +464,16 @@ def build(
                     tds.append('<td style="background:#fafafa;color:#d1d5db">—</td>')
                 else:
                     bg, fg = sc.get(p, ("#eef3f0", "#444"))
-                    tds.append(f'<td style="background:{bg};color:{fg}">{p:,}</td>')
+                    note = (notes or {}).get((d, g))
+                    sub = (f'<div style="font-size:9.5px;line-height:1.2;opacity:.6">{note}</div>'
+                           if note else "")
+                    tds.append(f'<td style="background:{bg};color:{fg}">{p:,}{sub}</td>')
             rows.append("<tr>" + "".join(tds) + "</tr>")
         return (f'<table class="matrix"><thead><tr><th></th>{head}</tr></thead>'
                 f'<tbody>{"".join(rows)}</tbody></table>')
 
     google_matrix_html = _matrix_html(matrix)
-    ctrip_matrix_html = _matrix_html(ctrip_matrix or {})
+    ctrip_matrix_html = _matrix_html(ctrip_matrix or {}, ctrip_at or {})
 
     # ---- 全量列表 ----
     list_rows = []
@@ -591,8 +596,9 @@ border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
 
 <h2>价格矩阵 · 携程（行 = 出发日，列 = 间隔天数）</h2>
 <div class="sub" style="margin-top:-6px;">
-<strong>去程和返程都是卡塔尔</strong>的实取往返价。携程只核 Top 组合，
-所以只有已核价的行会出现；空格 — 表示该组合没核，不是无票。
+<strong>去程和返程都是卡塔尔</strong>的实取往返价，来自本地实价库：
+每格取该组合<strong>最近一次</strong>核价，格子右下角小字是核价日期。
+每次扫描核到的组合都会累积进来，所以这张表会越用越满；— 表示还没核过。
 </div>
 {ctrip_matrix_html}
 

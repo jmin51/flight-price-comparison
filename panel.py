@@ -228,6 +228,13 @@ def _metrics() -> dict:
         row = conn.execute("SELECT COUNT(*) n FROM runs").fetchone()
         out["runs"] = int(row["n"]) if row else 0
 
+        # 本地实价库覆盖：携程已核过多少个日期组合（越搜越多）
+        row = conn.execute(
+            "SELECT COUNT(DISTINCT dep_date || '|' || ret_date) n FROM offers "
+            "WHERE source='ctrip' AND price IS NOT NULL"
+        ).fetchone()
+        out["ctrip_covered"] = int(row["n"]) if row else 0
+
         row = conn.execute(
             "SELECT dep_date, ret_date, price FROM offers WHERE price IS NOT NULL "
             "AND source='google' ORDER BY price ASC LIMIT 1"
