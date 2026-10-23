@@ -63,6 +63,8 @@ def parse_args() -> argparse.Namespace:
                     help="跳过中国平台（同程）最低价抓取")
     ap.add_argument("--no-fliggy", action="store_true",
                     help="跳过飞猪核价")
+    ap.add_argument("--no-ctrip", action="store_true",
+                    help="跳过携程核价")
     return ap.parse_args()
 
 
@@ -82,6 +84,23 @@ def expand_quick(all_combos: list[Combo], seed: list[tuple[str, str]], radius: i
                 want.add((d0 + timedelta(days=i), r0 + timedelta(days=j)))
     picked = [c for c in all_combos if (c.dep, c.ret) in want]
     return picked or all_combos
+
+
+def pick_candidates(ranked: list[dict], ly_offers: list[dict], top_n: int) -> list[tuple[str, str]]:
+    """国外 Top N + 国内 Top N，按 (去程, 返程) 去重。"""
+    out: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for o in ranked[:top_n]:
+        key = (o["dep_date"], o["ret_date"])
+        if key not in seen:
+            seen.add(key)
+            out.append(key)
+    for o in ly_offers[:top_n]:
+        key = (o.get("dep") or o.get("dep_date"), o.get("ret") or o.get("ret_date"))
+        if key[0] and key[1] and key not in seen:
+            seen.add(key)
+            out.append(key)
+    return out
 
 
 def scan(combos: list[Combo], cfg: dict, workers: int) -> tuple[list[dict], list[tuple[str, str, str]]]:
@@ -265,6 +284,61 @@ def main() -> int:
         except Exception as e:  # noqa: BLE001
             print(f"⚠️  中国平台抓取失败（不影响 Google 结果）：{type(e).__name__}: {str(e)[:160]}")
 
+    # ---- 携程核价（国内站，去程+返程都必须是卡塔尔）----
+    ctrip_rows: list[dict] = []
+    c_cfg = raw.get("ctrip", {}) or {}
+    if c_cfg.get("enabled", True) and not args.no_ctrip:
+        c_top = max(1, int(c_cfg.get("probe_top_n", 3)))
+        ly_c_offers: list[dict] = []
+        for r in ota_rows:
+            if r.get("key") == "ly":
+                ly_c_offers = r.get("offers") or []
+                break
+        c_cand = pick_candidates(ranked, ly_c_offers, c_top)
+
+        if c_cand:
+            print(f"\n携程核价 {len(c_cand)} 个组合（要求去返都是卡塔尔）…")
+            try:
+                from flightwatch.sources import ctrip as ctrip_src
+            except Exception as e:  # noqa: BLE001
+                print(f"⚠️ 携程模块不可用：{type(e).__name__}: {e}")
+            else:
+                c_delay = c_cfg.get("delay_seconds", [2.0, 3.5])
+                try:
+                    with ctrip_src.Probe(
+                        cfg,
+                        headless=bool(c_cfg.get("headless", True)),
+                        timeout=int(c_cfg.get("timeout", 45)),
+                    ) as probe:
+                        c_fails = 0
+                        for i, (dep, ret) in enumerate(c_cand, 1):
+                            try:
+                                r = probe.fetch(dep, ret)
+                            except ctrip_src.Blocked as e:
+                                print(f"  [{i}/{len(c_cand)}] {dep} → {ret}  被拦：{e}")
+                                print("  ⏸ 已停止携程核价，把 ctrip.headless 改成 false 手动过一次再跑。")
+                                break
+                            except Exception as e:  # noqa: BLE001
+                                c_fails += 1
+                                print(f"  [{i}/{len(c_cand)}] {dep} → {ret}  跳过：{str(e)[:80]}")
+                                if c_fails >= 3:
+                                    print("  ⏸ 连续 3 组取不到，本次放弃携程。")
+                                    break
+                                continue
+                            c_fails = 0
+                            ctrip_rows.append(r)
+                            store.add_offer(run_id, r)
+                            if r.get("qr_total"):
+                                print(f"  [{i}/{len(c_cand)}] {dep} → {ret}  "
+                                      f"双程 QR ¥{r['qr_total']:,}　全航司最低 ¥{r['all_min']:,}")
+                            else:
+                                print(f"  [{i}/{len(c_cand)}] {dep} → {ret}  "
+                                      f"返程无 QR 舱位，全航司最低 ¥{r['all_min']:,}")
+                            if i < len(c_cand):
+                                time.sleep(random.uniform(*c_delay))
+                except Exception as e:  # noqa: BLE001
+                    print(f"⚠️ 携程核价不可用（不影响其他结果）：{type(e).__name__}: {str(e)[:120]}")
+
     # ---- 飞猪核价（PC 站免登录，逐组核实际可订价）----
     fliggy_rows: list[dict] = []
     f_cfg = raw.get("fliggy", {}) or {}
@@ -276,18 +350,7 @@ def main() -> int:
                 ly_run_offers = r.get("offers") or []
                 break
 
-        cand: list[tuple[str, str]] = []
-        seen: set[tuple[str, str]] = set()
-        for o in ranked[:top_n]:
-            key = (o["dep_date"], o["ret_date"])
-            if key not in seen:
-                seen.add(key)
-                cand.append(key)
-        for o in ly_run_offers[:top_n]:
-            key = (o["dep"], o["ret"])
-            if key not in seen:
-                seen.add(key)
-                cand.append(key)
+        cand = pick_candidates(ranked, ly_run_offers, top_n)
 
         if cand:
             print(f"\n飞猪核价 {len(cand)} 个组合…")
@@ -348,10 +411,18 @@ def main() -> int:
         fliggy_note = ("飞猪这次没取到价：多半是连续请求触发了限流，等十几分钟再跑；"
                        "想看得更清楚就把 fliggy.headless 改成 false，用有界面模式跑。")
 
+    ctrip_note = ""
+    if not c_cfg.get("enabled", True):
+        ctrip_note = "携程核价已在 config.yaml 里关闭（ctrip.enabled = false）。"
+    elif args.no_ctrip:
+        ctrip_note = "本次用 --no-ctrip 跳过了携程核价。"
+    elif not ctrip_rows:
+        ctrip_note = "携程这次没取到价：可能是该组没有卡塔尔舱位，或被风控拦了。"
+
     matrix = {(o["dep_date"], o["gap_days"]): o["price"] for o in offers}
     path = report.build(cfg, run_id, offers, matrix, prev_prices, hist_min, elapsed, failures,
                         len(all_combos), window_info, verify_results, ota_rows, fliggy_rows,
-                        fliggy_note)
+                        fliggy_note, ctrip_rows, ctrip_note)
     print(f"报告：{path}")
     print(f"库内累计 {store.stats()['offers']} 条报价 / {store.stats()['runs']} 次运行")
 

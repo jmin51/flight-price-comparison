@@ -82,13 +82,14 @@ mail:
 verify:
   # 只在触发告警 / 发现新低时跑，不参与日常扫描
   # 同程不在这里：它的往返页要登录，改由下方 cn_ota 抓价格日历，更稳也更准
-  platforms: ["trip", "fliggy"]   # 携程国际 / 飞猪（天巡基本必被验证码拦，需要就加 "skyscanner"）
+  platforms: []                 # 旧核价路径已停用：携程国际(www.trip.com)被 Akamai 拦、飞猪H5要登录
+                                # 现在改用 ctrip（国内站）和 fliggy（PC站）两个专用数据源
   headless: true                # 平时无界面跑；想看着它操作就改 false
   timeout: 35                   # 单平台等价格渲染的最长秒数
   min_price: 2000               # 只认这个区间内的数字，防止把 "¥99 起" 之类的杂数当价格
   max_price: 80000
   trigger_below: 9900           # 最低价低于这个数就自动核价（0 = 每次扫描都核价）
-  auto: true                    # false = 只有手动加 --verify 才核价
+  auto: false                   # 旧核价通道已关闭，别开
   min_interval_minutes: 30      # 自动核价的最小间隔（OTA 按 IP 计数，跑太勤会被封）
   # 只认这些关键词同一容器里的价格，避免把「埃塞俄比亚航空 ¥10,387」当成卡塔尔航空
   airline_keywords: ["Qatar", "卡塔尔"]
@@ -109,9 +110,17 @@ cn_ota:
   fliggy:
     enabled: false
 
+# ---------- 携程核价（国内站，免登录，去返都要卡塔尔）----------
+ctrip:
+  enabled: true           # false = 跳过携程核价
+  probe_top_n: 3          # 国外 Top N + 国内 Top N，去重后最多 2N 组
+  headless: true          # 想看着它跑就改 false
+  timeout: 45             # 单组等列表渲染的最长秒数
+  delay_seconds: [2.0, 3.5]
+
 # ---------- 飞猪核价（PC 站免登录，真浏览器逐组核）----------
 fliggy:
-  enabled: true           # false = 跳过飞猪核价，回到只抓 Google + 同程
+  enabled: false          # 当前关闭（限流太频）；要启用改 true
   # ⚠️ 实测飞猪连续请求约 5 次后进入时间窗口限流（重开浏览器无效，等几分钟才恢复）
   #    所以默认只核 2+2=4 组。想要 10 组就调成 5，但大概率后几组会被限流
   probe_top_n: 2          # 国外 Top N + 国内 Top N，去重后最多 2N 组

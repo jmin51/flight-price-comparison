@@ -152,6 +152,8 @@ def build(
     ota_rows: list[dict[str, Any]] | None = None,
     fliggy_rows: list[dict[str, Any]] | None = None,
     fliggy_note: str = "",
+    ctrip_rows: list[dict[str, Any]] | None = None,
+    ctrip_note: str = "",
 ) -> Path:
     route = cfg.route
     origin = route["origins"][0]
@@ -251,6 +253,56 @@ def build(
         if dom_cards
         else '<p style="color:#9ca3af;font-size:13px;">同程这次没取到报价（接口受限，或窗口内无票）。</p>'
     )
+
+    # ---- 携程核价（国内站，去返双程 QR）----
+    ctrip_html = ""
+    if ctrip_rows:
+        g_map_c = {(o["dep_date"], o["ret_date"]): o["price"] for o in ranked}
+        crs = []
+        for r in ctrip_rows:
+            tot = r.get("qr_total")
+            g = g_map_c.get((r["dep_date"], r["ret_date"]))
+            if tot:
+                cell = f'<b style="color:#0b6b3a;font-size:14px;">{_money(tot)}</b>'
+                if g:
+                    d = tot - g
+                    if d > 0:
+                        diff = f'<span class="tag muted">比 Google 高 ¥{d:,}</span>'
+                    elif d < 0:
+                        diff = f'<span class="tag drop">比 Google 低 ¥{-d:,}</span>'
+                    else:
+                        diff = '<span class="tag">与 Google 持平</span>'
+                else:
+                    diff = "—"
+                mark = '<span class="tag">去返都是 QR</span>'
+            else:
+                cell = '<span style="color:#9ca3af;">无 QR 返程</span>'
+                diff = "—"
+                mark = '<span class="tag muted">返程非卡塔尔</span>'
+            crs.append(
+                f"<tr><td style='padding:9px 12px;white-space:nowrap'>"
+                f"{r['dep_date']} → {r['ret_date']}</td>"
+                f"<td style='padding:9px 12px;white-space:nowrap'>{cell}</td>"
+                f"<td style='padding:9px 12px;color:#374151;'>{_money(r.get('all_min'))}</td>"
+                f"<td style='padding:9px 12px;'>{diff}</td>"
+                f"<td style='padding:9px 12px;'>{mark}</td></tr>"
+            )
+        ctrip_html = f"""
+<h2>携程核价 · 往返双程均为卡塔尔 <span class="h2note">国内站 flights.ctrip.com，免登录</span></h2>
+<div class="sub" style="margin-top:-6px;margin-bottom:10px;">
+先选中卡塔尔去程，再在返程列表里只取<strong>返程航司也是卡塔尔</strong>的舱位，
+所以这一列是真正的「QR 去 + QR 返」往返含税总价。
+</div>
+<table class="list"><thead><tr>
+  <th>组合</th><th>双程 QR 往返价</th><th>全航司最低</th><th>对比 Google</th><th>口径</th>
+</tr></thead><tbody>{''.join(crs)}</tbody></table>
+"""
+    elif ctrip_note:
+        ctrip_html = (
+            '<h2>携程核价 <span class="h2note">本次未取到</span></h2>'
+            '<p style="color:#9ca3af;font-size:13px;margin:0 0 4px;">'
+            f"{html.escape(ctrip_note)}</p>"
+        )
 
     # ---- 飞猪核价（实际可订价）----
     fliggy_html = ""
@@ -457,6 +509,8 @@ border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
 
 <h2>国内平台 · Top 5 <span class="h2note">同程旅行 · 全航司 · 去程+返程单程日历合成</span></h2>
 {domestic_html}
+
+{ctrip_html}
 
 {fliggy_html}
 
