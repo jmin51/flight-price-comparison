@@ -429,32 +429,30 @@ def build(
 </tr></thead><tbody>{''.join(other_trs)}</tbody></table>
 """
 
-    # ---- 价格矩阵（Google 一行价 + 携程双程 QR 副价）----
-    cm: dict[tuple[str, int], int] = ctrip_matrix or {}
-    dep_dates = sorted({d for (d, _g) in matrix.keys()} | {d for (d, _g) in cm.keys()})
-    gaps = sorted({g for (_d, g) in matrix.keys()} | {g for (_d, g) in cm.keys()})
-    head = "".join(f"<th>间隔 {g} 天</th>" for g in gaps)
-    rows_html = []
-    for d in dep_dates:
-        tds = [f'<td class="day">{d[5:]}</td>']
-        for g in gaps:
-            p = matrix.get((d, g))
-            c = cm.get((d, g))
-            if p is None and c is None:
-                tds.append('<td style="background:#fafafa;color:#d1d5db">—</td>')
-                continue
-            base = p if p is not None else c
-            bg, fg = scale.get(base, ("#eef3f0", "#444"))
-            if p is not None and c is not None:
-                sub = (f'<div style="font-size:10px;line-height:1.25;opacity:.82;'
-                       f'margin-top:2px;font-weight:400;">携程 {c:,}</div>')
-            elif p is None:
-                sub = ('<div style="font-size:10px;line-height:1.25;opacity:.82;'
-                       'margin-top:2px;font-weight:400;">携程</div>')
-            else:
-                sub = ""
-            tds.append(f'<td style="background:{bg};color:{fg}">{base:,}{sub}</td>')
-        rows_html.append("<tr>" + "".join(tds) + "</tr>")
+    # ---- 价格矩阵：Google / 携程 各自独立一张表 ----
+    def _matrix_html(mx: dict[tuple[str, int], int]) -> str:
+        if not mx:
+            return '<p style="color:#9ca3af;font-size:13px;">本次没有数据。</p>'
+        ds = sorted({d for (d, _g) in mx.keys()})
+        gs = sorted({g for (_d, g) in mx.keys()})
+        sc = _color_scale(list(mx.values()))
+        head = "".join(f"<th>间隔 {g} 天</th>" for g in gs)
+        rows = []
+        for d in ds:
+            tds = [f'<td class="day">{d[5:]}</td>']
+            for g in gs:
+                p = mx.get((d, g))
+                if p is None:
+                    tds.append('<td style="background:#fafafa;color:#d1d5db">—</td>')
+                else:
+                    bg, fg = sc.get(p, ("#eef3f0", "#444"))
+                    tds.append(f'<td style="background:{bg};color:{fg}">{p:,}</td>')
+            rows.append("<tr>" + "".join(tds) + "</tr>")
+        return (f'<table class="matrix"><thead><tr><th></th>{head}</tr></thead>'
+                f'<tbody>{"".join(rows)}</tbody></table>')
+
+    google_matrix_html = _matrix_html(matrix)
+    ctrip_matrix_html = _matrix_html(ctrip_matrix or {})
 
     # ---- 全量列表 ----
     list_rows = []
@@ -571,13 +569,16 @@ border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
 
 {verify_html}
 
-<h2>价格矩阵（行 = 出发日，列 = 间隔天数）</h2>
+<h2>价格矩阵 · Google（行 = 出发日，列 = 间隔天数）</h2>
+<div class="sub" style="margin-top:-6px;">往返含税展示价，全部为卡塔尔航空。</div>
+{google_matrix_html}
+
+<h2>价格矩阵 · 携程（行 = 出发日，列 = 间隔天数）</h2>
 <div class="sub" style="margin-top:-6px;">
-上排深色 = Google 含税展示价；下排浅色 = <strong>携程双程卡塔尔实取价</strong>。
-携程只核 Top 组合，没核到的格子不显示副价（不是无票）。
+<strong>去程和返程都是卡塔尔</strong>的实取往返价。携程只核 Top 组合，
+所以只有已核价的行会出现；空格 — 表示该组合没核，不是无票。
 </div>
-<table class="matrix"><thead><tr><th></th>{head}</tr></thead>
-<tbody>{''.join(rows_html)}</tbody></table>
+{ctrip_matrix_html}
 
 <h2>全部组合（点击表头排序）</h2>
 <table class="list" id="allList">
