@@ -1,0 +1,117 @@
+# ==========================================================
+# 示例配置。使用前复制成 config.yaml 再填自己的密钥：
+#   copy config.example.yaml config.yaml
+# config.yaml 已在 .gitignore 里，不会被提交。
+# ==========================================================
+# ==========================================================
+# 机票价格监控配置
+# 改这里就行，不用碰代码
+# ==========================================================
+
+# ---------- 航线 ----------
+route:
+  origins: ["PVG"]              # 上海浦东（卡塔尔航空在此起飞；SHA 无 QR 长途航线）
+  destination: "GRU"            # 圣保罗 瓜鲁柳斯
+  airlines: ["QR"]              # 卡塔尔航空
+  via: ["DOH"]                  # 多哈中转（仅用于展示校验，Google 侧用 max_stops 控制）
+  cabin: economy                # economy / premium-economy / business / first
+  adults: 1
+  currency: CNY
+  max_stops: 1                  # 允许 1 次中转（即多哈）
+
+# ---------- 日期窗口 ----------
+window:
+  # relative = 按"运行当天"往后推（每天自动滚）
+  # fixed    = 用下面写死的 start / latest_departure / max_return
+  mode: relative
+  offset_days: 10        # 起点 = 今天 + 10 天（今天 10-22 → 11-01）
+  span_days: 38          # 出发日共 38 天（11-01 起 38 天 → 到 12-08）
+  tail_days: 3           # 返程最晚 = 最晚出发日 + 3 天
+  gap_days: [3, 4, 5]    # 去返程间隔天数
+
+  # ↓ 仅当 mode: fixed 时生效
+  start: "2026-11-01"
+  latest_departure: "2026-12-08"
+  max_return: "2026-12-11"
+
+# ---------- 扫描 ----------
+scan:
+  delay_seconds: [0.8, 1.6]     # 每次请求之间的随机延时，防限流
+  timeout: 40
+  retries: 2
+  quick_top_n: 20               # 快速模式只扫上次的 Top N 组合
+
+# ---------- 网络 ----------
+network:
+  # 留空 = 自动探测 Windows 系统代理（Clash 开了「系统代理」就能直接用）
+  # 需要写死时填 http://127.0.0.1:6696 （本机 Clash 端口）
+  proxy: "http://127.0.0.1:6696"
+  strip_env_proxy: true         # 清掉宿主注入的 HTTP_PROXY，避免串到错误代理
+
+# ---------- 告警规则 ----------
+alerts:
+  mode: new_low_and_drop        # 只报新低 / 跌幅，不看绝对阈值
+  drop_pct_combo: 8             # 单个日期组合较上次跌幅超过 8% 就报
+  drop_pct_overall: 5           # 全局最低价较上次跌幅超过 5% 就报
+  cooldown_hours: 12            # 同一组合 12 小时内不重复报
+  top_n: 5                      # 邮件里列前 N 个组合
+
+# ---------- 邮件 ----------
+mail:
+  enabled: true
+  # smtp   = 直连 QQ 邮箱（需要梯子放行 465 端口，见「检测邮件配置.bat」）
+  # resend = 走 HTTPS 443 的邮件 API，不受梯子封端口影响（已实测可用）
+  channel: resend
+  smtp_host: "smtp.qq.com"
+  smtp_port: 465
+  use_ssl: true
+  username: "你的邮箱@qq.com"
+  # ⚠️ 这里填 QQ 邮箱的【授权码】，不是 QQ 登录密码
+  # 获取：QQ邮箱 → 设置 → 账号 → 开启 POP3/SMTP 服务 → 生成授权码（16位）
+  password: ""              # ← 自己填 QQ 邮箱授权码
+  from_name: "机票价格监控"
+  to: ["你的邮箱@qq.com"]
+
+  # ↓ channel: resend 时才用（resend.com 注册拿 Key，免费 3000 封/月）
+  resend_api_key: ""  # ← 自己填 resend.com 的 Key
+  # 未验证自有域名前，发件人只能固定用 onboarding@resend.dev，
+  # 且收件人只能是注册邮箱本身（这里正好都是 你的邮箱@qq.com，可以直接用）
+  resend_from: "onboarding@resend.dev"
+
+# ---------- 真浏览器核价（--verify）----------
+verify:
+  # 只在触发告警 / 发现新低时跑，不参与日常扫描
+  # 同程不在这里：它的往返页要登录，改由下方 cn_ota 抓价格日历，更稳也更准
+  platforms: ["trip", "fliggy"]   # 携程国际 / 飞猪（天巡基本必被验证码拦，需要就加 "skyscanner"）
+  headless: true                # 平时无界面跑；想看着它操作就改 false
+  timeout: 35                   # 单平台等价格渲染的最长秒数
+  min_price: 2000               # 只认这个区间内的数字，防止把 "¥99 起" 之类的杂数当价格
+  max_price: 80000
+  trigger_below: 9900           # 最低价低于这个数就自动核价（0 = 每次扫描都核价）
+  auto: true                    # false = 只有手动加 --verify 才核价
+  min_interval_minutes: 30      # 自动核价的最小间隔（OTA 按 IP 计数，跑太勤会被封）
+  # 只认这些关键词同一容器里的价格，避免把「埃塞俄比亚航空 ¥10,387」当成卡塔尔航空
+  airline_keywords: ["Qatar", "卡塔尔"]
+  one_shot: true                # 一次扫描只核最佳那一个组合，避免开浏览器多次
+
+# ---------- 中国 OTA 最低价 ----------
+cn_ota:
+  enabled: true
+  # 同程国际站：打开 /iflight/ 抓一次 user-dun 会话令牌，之后纯 HTTP 调价格日历
+  # 走的是「单程日历 + 单程日历」合成往返，拿到的是全航司最低价（不限卡塔尔）
+  ly:
+    enabled: true
+    token_cache: "data/ly_token.json"
+    token_ttl_hours: 6          # 令牌缓存时长，过期会自动重抓
+  # 携程 / 飞猪：实测被 Akamai / UMID 设备指纹拦住，默认关闭，只做状态展示
+  trip:
+    enabled: false
+  fliggy:
+    enabled: false
+
+# ---------- 报告 ----------
+report:
+  dir: "reports"
+  auto_open: true               # 扫描完自动弹开 HTML 报告
+
+database: "data/flights.db"

@@ -1,0 +1,9 @@
+# 统一换行，避免 bat 在别的机器上被改成 LF 后 cmd 解析错乱
+* text=auto
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.py text eol=lf
+*.html text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.txt text eol=lf

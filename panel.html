@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>机票监控 · 控制面板</title>
+<style>
+  :root{
+    --green:#0b6b3a; --green-light:#EAF3DE; --green-text:#3B6D11;
+    --bg:#f5f6f7; --card:#ffffff; --line:#e5e7eb;
+    --t1:#1a1a1a; --t2:#6b7280; --t3:#9ca3af;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--t1);
+       font-family:"Microsoft YaHei","PingFang SC",system-ui,-apple-system,sans-serif;
+       font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 22px 48px}
+  header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:22px}
+  h1{font-size:19px;font-weight:600;margin:0 0 4px}
+  .sub{font-size:13px;color:var(--t2);margin:0}
+  .pill{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;
+        font-size:12px;white-space:nowrap;background:var(--green-light);color:var(--green-text)}
+  .pill.bad{background:#FCEBEB;color:#A32D2D}
+  .pill .dot{width:6px;height:6px;border-radius:50%;background:#639922}
+  .pill.bad .dot{background:#E24B4A}
+
+  .actions{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:20px;align-items:center}
+  button{font-family:inherit;font-size:13.5px;padding:9px 18px;border-radius:8px;
+         border:1px solid #d1d5db;background:#fff;color:var(--t1);cursor:pointer;
+         transition:background .15s,border-color .15s,opacity .15s}
+  button:hover:not(:disabled){border-color:#9ca3af;background:#fafafa}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.primary{background:var(--green);border-color:var(--green);color:#fff;font-weight:500}
+  button.primary:hover:not(:disabled){background:#095c31;border-color:#095c31}
+  button.ghost{color:var(--t2);border-color:transparent;background:transparent}
+  button.ghost:hover:not(:disabled){background:#eceef0}
+  .spacer{flex:1}
+
+  .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
+  .metric{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 16px}
+  .metric .k{font-size:12px;color:var(--t2);margin:0 0 6px}
+  .metric .v{font-size:23px;font-weight:600;margin:0;letter-spacing:-.3px}
+  .metric .v.green{color:var(--green)}
+  .metric .d{font-size:12px;color:var(--t3);margin:4px 0 0}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+        padding:16px 18px;margin-bottom:16px}
+  .card-head{display:flex;justify-content:space-between;align-items:baseline;
+             gap:12px;margin-bottom:12px}
+  .card-head h2{font-size:14px;font-weight:600;margin:0}
+  .card-head .hint{font-size:12px;color:var(--t2);margin:0}
+
+  .bar{height:6px;border-radius:3px;background:var(--green-light);overflow:hidden;margin-bottom:12px}
+  .bar > i{display:block;height:100%;width:0;background:var(--green);
+           transition:width .3s ease;border-radius:3px}
+
+  .log{font-family:Consolas,"Courier New",monospace;font-size:12.5px;line-height:1.85;
+       color:var(--t2);max-height:210px;overflow-y:auto;white-space:pre-wrap;
+       word-break:break-all;margin:0}
+  .log .hi{color:var(--green);font-weight:600}
+
+  .empty{color:var(--t3);font-size:13px;margin:0;padding:8px 0}
+
+  .trend-labels{display:flex;justify-content:space-between;font-size:11px;
+                color:var(--t3);margin-top:4px}
+
+  #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);
+         background:#1f2937;color:#fff;font-size:13px;padding:10px 18px;border-radius:8px;
+         opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;max-width:80vw}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #toast.err{background:#A32D2D}
+
+  @media (max-width:760px){
+    .metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+    header{flex-direction:column}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>PVG → GRU 机票监控</h1>
+      <p class="sub" id="routeLine">卡塔尔航空 · 多哈中转</p>
+    </div>
+    <div class="pill" id="proxyPill"><span class="dot"></span><span id="proxyText">检测中…</span></div>
+  </header>
+
+  <div class="actions">
+    <button class="primary" id="btnFull">一键扫描</button>
+    <button id="btnQuick">快速扫描</button>
+    <button id="btnReport">打开最新报告</button>
+    <button id="btnStop" style="display:none;color:#A32D2D;border-color:#f0c4c4">停止扫描</button>
+    <div class="spacer"></div>
+    <button class="ghost" id="btnShutdown">停止服务</button>
+  </div>
+
+  <div class="metrics">
+    <div class="metric">
+      <p class="k">当前最低</p>
+      <p class="v green" id="mCurrent">—</p>
+      <p class="d" id="mCurrentDate">—</p>
+    </div>
+    <div class="metric">
+      <p class="k">同程最低</p>
+      <p class="v" id="mOta">—</p>
+      <p class="d" id="mOtaNote">—</p>
+    </div>
+    <div class="metric">
+      <p class="k">历史最低</p>
+      <p class="v" id="mHist">—</p>
+      <p class="d" id="mHistDate">—</p>
+    </div>
+    <div class="metric">
+      <p class="k">库内报价</p>
+      <p class="v" id="mOffers">—</p>
+      <p class="d" id="mRuns">—</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>扫描进度</h2>
+      <p class="hint" id="progHint">空闲中 · 上次扫描 —</p>
+    </div>
+    <div class="bar"><i id="progBar"></i></div>
+    <div class="log" id="logBox"><p class="empty">还没有运行记录。点「一键扫描」开始，或「打开最新报告」看上次结果。</p></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>价格趋势 · 近 12 次扫描的最低价</h2>
+      <p class="hint" id="trendHint">—</p>
+    </div>
+    <div id="trendBox"><p class="empty">数据不足，扫描几次后这里会出现走势。</p></div>
+  </div>
+
+</div>
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let running = false, timer = null, es = null;
+const MAX_LINES = 200;
+
+function toast(msg, isErr) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'show' + (isErr ? ' err' : '');
+  clearTimeout(t._h);
+  t._h = setTimeout(() => { t.className = ''; }, 3200);
+}
+
+function money(v) { return v == null ? '—' : '¥' + v.toLocaleString('zh-CN'); }
+function shortDate(s) { return s ? s.slice(5) : '—'; }
+
+function renderStatus(s) {
+  running = !!s.running;
+  $('btnFull').disabled = running;
+  $('btnQuick').disabled = running;
+  $('btnStop').style.display = running ? '' : 'none';
+  $('btnFull').textContent = running && s.mode === 'full' ? '全量扫描中…' : '一键扫描';
+  $('btnQuick').textContent = running && s.mode === 'quick' ? '快速扫描中…' : '快速扫描';
+
+  if (s.window) {
+    $('routeLine').textContent =
+      `卡塔尔航空 · 多哈中转 · 窗口 ${s.window.start} ~ ${s.window.last_dep}` +
+      ` · ${s.window.combos} 个组合`;
+  }
+
+  const p = s.proxy || {};
+  const pill = $('proxyPill');
+  pill.className = 'pill' + (p.ok ? '' : ' bad');
+  $('proxyText').textContent = p.ok
+    ? `代理正常 · ${p.proxy}${p.auto ? '（自动探测）' : ''}`
+    : `代理异常 · ${p.note || '未配置'}`;
+
+  const m = s.metrics || {};
+  $('mCurrent').textContent = money(m.current && m.current.price);
+  $('mCurrentDate').textContent = m.current ? `${m.current.dep} → ${m.current.ret}` : '—';
+  $('mHist').textContent = money(m.hist && m.hist.price);
+  $('mHistDate').textContent = m.hist ? `${m.hist.dep} → ${m.hist.ret}` : '—';
+  $('mOffers').textContent = m.offers != null ? m.offers.toLocaleString('zh-CN') : '—';
+  $('mRuns').textContent = m.runs != null ? `${m.runs} 次运行` : '—';
+
+  const ota = s.ota || null;
+  $('mOta').textContent = ota ? money(ota.price) : '—';
+  $('mOtaNote').textContent = ota
+    ? `${shortDate(ota.dep)} → ${shortDate(ota.ret)}${ota.compare ? ' · ' + ota.compare : ''}`
+    : '还没抓到同程数据';
+
+  const pr = s.progress || {};
+  const lr = m.last_run;
+  if (running) {
+    const total = pr.total || 1;
+    $('progBar').style.width = Math.min(100, pr.done / total * 100) + '%';
+    $('progHint').textContent =
+      `${pr.done || 0} / ${pr.total || '?'} · 已用 ${s.elapsed || 0}s`;
+  } else {
+    if (!pr.done) $('progBar').style.width = '100%';
+    $('progBar').style.background = lr && lr.failed > (lr.ok || 0) ? '#E24B4A' : 'var(--green)';
+    $('progHint').textContent = lr
+      ? `上次扫描 ${lr.finished_at ? lr.finished_at.replace('T', ' ').slice(5, 16) : '—'}` +
+        ` · ${lr.mode === 'quick' ? '快速' : '全量'} · 成功 ${lr.ok || 0}/${lr.total || 0}`
+      : '空闲中 · 还没扫描过';
+  }
+
+  if (s.lines && s.lines.length && !$('logBox').dataset.ready) {
+    $('logBox').dataset.ready = '1';
+    $('logBox').innerHTML = '';
+    s.lines.forEach(addLine);
+    scrollLog();
+  }
+
+  renderTrend(s.trend || []);
+}
+
+function addLine(text) {
+  const box = $('logBox');
+  const empty = box.querySelector('.empty');
+  if (empty) empty.remove();
+  const d = document.createElement('div');
+  if (/¥[\d,]{4,}/.test(text)) {
+    d.innerHTML = text.replace(/(¥[\d,]+)/g, '<span class="hi">$1</span>');
+  } else {
+    d.textContent = text;
+  }
+  box.appendChild(d);
+  while (box.children.length > MAX_LINES) box.removeChild(box.firstChild);
+}
+
+function scrollLog() {
+  const box = $('logBox');
+  box.scrollTop = box.scrollHeight;
+}
+
+function renderTrend(data) {
+  if (!data || data.length < 2) return;
+  const prices = data.map(d => d.price);
+  const min = Math.min(...prices), max = Math.max(...prices);
+  const pad = Math.max(40, Math.round((max - min) * 0.18));
+  const lo = min - pad, hi = max + pad;
+  const W = 1000, H = 110;
+  const x = i => (i / (data.length - 1)) * (W - 8) + 4;
+  const y = v => H - 18 - ((v - lo) / (hi - lo)) * (H - 30);
+  const pts = data.map((d, i) => `${x(i).toFixed(1)},${y(d.price).toFixed(1)}`).join(' ');
+  const area = `${pts} ${(W - 4).toFixed(1)},${H - 8} 4,${H - 8}`;
+  $('trendBox').innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:110px">
+      <polygon points="${area}" fill="#EAF3DE"></polygon>
+      <polyline points="${pts}" fill="none" stroke="#0b6b3a" stroke-width="2"
+                stroke-linejoin="round" vector-effect="non-scaling-stroke"></polyline>
+      <circle cx="${x(data.length - 1).toFixed(1)}" cy="${y(prices[prices.length - 1]).toFixed(1)}"
+              r="3.5" fill="#0b6b3a"></circle>
+    </svg>
+    <div class="trend-labels">
+      <span>${(data[0].at || '').slice(5, 16)}</span>
+      <span>最低 ${money(min)} · 最高 ${money(max)}</span>
+      <span>${(data[data.length - 1].at || '').slice(5, 16)}</span>
+    </div>`;
+  $('trendHint').textContent = `最新 ${money(prices[prices.length - 1])}`;
+}
+
+async function loadStatus() {
+  try {
+    const s = await (await fetch('/api/status')).json();
+    renderStatus(s);
+    return s;
+  } catch (e) {
+    $('proxyText').textContent = '面板连接失败';
+    $('proxyPill').className = 'pill bad';
+  }
+}
+
+async function scan(mode) {
+  try {
+    const r = await fetch('/api/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode })
+    });
+    const j = await r.json();
+    if (!r.ok) { toast(j.error || '启动失败', true); return; }
+    $('logBox').innerHTML = '';
+    toast(mode === 'full' ? '已开始全量扫描…' : '已开始快速扫描…');
+    connectStream();
+    loadStatus();
+  } catch (e) {
+    toast('启动失败：' + e.message, true);
+  }
+}
+
+function connectStream() {
+  if (es) return;
+  es = new EventSource('/api/stream');
+  es.onmessage = ev => {
+    let d;
+    try { d = JSON.parse(ev.data); } catch { return; }
+    if (d.type === 'log') { addLine(d.text); scrollLog(); }
+    else if (d.type === 'progress') {
+      const total = d.total || 1;
+      $('progBar').style.width = Math.min(100, d.done / total * 100) + '%';
+      $('progBar').style.background = 'var(--green)';
+      $('progHint').textContent = `${d.done} / ${d.total} · 当前 ${d.combo || ''} ${d.price || ''}`;
+    }
+    else if (d.type === 'ota') { loadStatus(); }
+    else if (d.type === 'done') {
+      toast(d.code === 0 ? '扫描完成，报告已更新' : `扫描结束，退出码 ${d.code}`, d.code !== 0);
+      loadStatus();
+    }
+  };
+  es.onerror = () => { /* 浏览器会自动重连 */ };
+}
+
+$('btnFull').onclick = () => scan('full');
+$('btnQuick').onclick = () => scan('quick');
+$('btnReport').onclick = async () => {
+  const s = await loadStatus();
+  if (!s || !s.report || !s.report.exists) { toast('还没有报告，先跑一次扫描', true); return; }
+  window.open('/report', '_blank');
+};
+$('btnStop').onclick = async () => {
+  if (!confirm('确定中断当前扫描？已抓到的结果会丢失。')) return;
+  await fetch('/api/stop', { method: 'POST' });
+  toast('已请求停止');
+};
+$('btnShutdown').onclick = async () => {
+  if (!confirm('停止面板服务？扫描若在进行也会中断。')) return;
+  await fetch('/api/shutdown', { method: 'POST' }).catch(() => {});
+  document.body.innerHTML =
+    '<div class="wrap"><p style="color:#6b7280;font-size:14px">服务已停止，可以关闭这个标签页了。</p></div>';
+};
+
+loadStatus().then(s => {
+  if (s && s.running) connectStream();
+  timer = setInterval(() => { if (running) loadStatus(); }, 4000);
+});
+</script>
+</body>
+</html>

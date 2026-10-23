@@ -1,0 +1,18 @@
+# ---- 密钥与个人配置 ----
+config.yaml
+
+# ---- 数据与登录态（含 Cookie，绝不外传）----
+data/
+reports/
+logs/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ---- 系统 ----
+Thumbs.db
+desktop.ini
+.DS_Store
