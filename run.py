@@ -61,6 +61,8 @@ def parse_args() -> argparse.Namespace:
                     help="核价时显示浏览器窗口，方便看它卡在哪")
     ap.add_argument("--no-ota", action="store_true",
                     help="跳过中国平台（同程）最低价抓取")
+    ap.add_argument("--no-fliggy", action="store_true",
+                    help="跳过飞猪核价")
     return ap.parse_args()
 
 
@@ -266,7 +268,7 @@ def main() -> int:
     # ---- 飞猪核价（PC 站免登录，逐组核实际可订价）----
     fliggy_rows: list[dict] = []
     f_cfg = raw.get("fliggy", {}) or {}
-    if f_cfg.get("enabled", False):
+    if f_cfg.get("enabled", False) and not args.no_fliggy:
         top_n = max(1, int(f_cfg.get("probe_top_n", 5)))
         ly_run_offers: list[dict] = []
         for r in ota_rows:
@@ -337,9 +339,19 @@ def main() -> int:
                     print(f"⚠️ 飞猪核价不可用（不影响其他结果）：{type(e).__name__}: {str(e)[:120]}")
 
     # ---- 报告 ----
+    fliggy_note = ""
+    if not f_cfg.get("enabled", True):
+        fliggy_note = "飞猪核价已在 config.yaml 里关闭（fliggy.enabled = false）。"
+    elif args.no_fliggy:
+        fliggy_note = "本次用 --no-fliggy 跳过了飞猪核价。"
+    elif not fliggy_rows:
+        fliggy_note = ("飞猪这次没取到价：多半是连续请求触发了限流，等十几分钟再跑；"
+                       "想看得更清楚就把 fliggy.headless 改成 false，用有界面模式跑。")
+
     matrix = {(o["dep_date"], o["gap_days"]): o["price"] for o in offers}
     path = report.build(cfg, run_id, offers, matrix, prev_prices, hist_min, elapsed, failures,
-                        len(all_combos), window_info, verify_results, ota_rows, fliggy_rows)
+                        len(all_combos), window_info, verify_results, ota_rows, fliggy_rows,
+                        fliggy_note)
     print(f"报告：{path}")
     print(f"库内累计 {store.stats()['offers']} 条报价 / {store.stats()['runs']} 次运行")
 

@@ -151,6 +151,7 @@ def build(
     verify_results: list[dict[str, Any]] | None = None,
     ota_rows: list[dict[str, Any]] | None = None,
     fliggy_rows: list[dict[str, Any]] | None = None,
+    fliggy_note: str = "",
 ) -> Path:
     route = cfg.route
     origin = route["origins"][0]
@@ -293,6 +294,12 @@ def build(
   <th>组合</th><th>卡塔尔航空</th><th>全航司最低</th><th>对比 Google</th><th>中转</th>
 </tr></thead><tbody>{''.join(frs)}</tbody></table>
 """
+    elif fliggy_note:
+        fliggy_html = (
+            '<h2>飞猪核价 <span class="h2note">本次未取到</span></h2>'
+            '<p style="color:#9ca3af;font-size:13px;margin:0 0 4px;">'
+            f"{html.escape(fliggy_note)}</p>"
+        )
 
     # ---- 其他国内平台（抓不到价，只给状态和跳转）----
     ref = ranked[0] if ranked else ({"dep": ly_offers[0]["dep"], "ret": ly_offers[0]["ret"]}
