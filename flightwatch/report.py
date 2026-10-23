@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import html
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -430,11 +430,27 @@ def build(
 """
 
     # ---- 价格矩阵：Google / 携程 各自独立一张表 ----
+    # 行轴统一用「配置窗口」的完整日期，避免某张表只出现有数据的那几天
+    axis_gaps = sorted(int(g) for g in (cfg.window.get("gap_days") or [3, 4, 5]))
+    axis_dates: list[str] | None = None
+    w0 = (window_info or {}).get("start")
+    w1 = (window_info or {}).get("last_dep")
+    if w0 and w1:
+        try:
+            cur = date.fromisoformat(str(w0))
+            end = date.fromisoformat(str(w1))
+            axis_dates = []
+            while cur <= end:
+                axis_dates.append(cur.isoformat())
+                cur += timedelta(days=1)
+        except ValueError:
+            axis_dates = None
+
     def _matrix_html(mx: dict[tuple[str, int], int]) -> str:
         if not mx:
             return '<p style="color:#9ca3af;font-size:13px;">本次没有数据。</p>'
-        ds = sorted({d for (d, _g) in mx.keys()})
-        gs = sorted({g for (_d, g) in mx.keys()})
+        ds = axis_dates or sorted({d for (d, _g) in mx.keys()})
+        gs = axis_gaps or sorted({g for (_d, g) in mx.keys()})
         sc = _color_scale(list(mx.values()))
         head = "".join(f"<th>间隔 {g} 天</th>" for g in gs)
         rows = []
