@@ -263,10 +263,83 @@ def main() -> int:
         except Exception as e:  # noqa: BLE001
             print(f"⚠️  中国平台抓取失败（不影响 Google 结果）：{type(e).__name__}: {str(e)[:160]}")
 
+    # ---- 飞猪核价（PC 站免登录，逐组核实际可订价）----
+    fliggy_rows: list[dict] = []
+    f_cfg = raw.get("fliggy", {}) or {}
+    if f_cfg.get("enabled", False):
+        top_n = max(1, int(f_cfg.get("probe_top_n", 5)))
+        ly_run_offers: list[dict] = []
+        for r in ota_rows:
+            if r.get("key") == "ly":
+                ly_run_offers = r.get("offers") or []
+                break
+
+        cand: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for o in ranked[:top_n]:
+            key = (o["dep_date"], o["ret_date"])
+            if key not in seen:
+                seen.add(key)
+                cand.append(key)
+        for o in ly_run_offers[:top_n]:
+            key = (o["dep"], o["ret"])
+            if key not in seen:
+                seen.add(key)
+                cand.append(key)
+
+        if cand:
+            print(f"\n飞猪核价 {len(cand)} 个组合…")
+            try:
+                from flightwatch.sources import fliggy as fliggy_src
+            except Exception as e:  # noqa: BLE001
+                print(f"⚠️ 飞猪模块不可用：{type(e).__name__}: {e}")
+            else:
+                delay = f_cfg.get("delay_seconds", [1.0, 2.0])
+                try:
+                    with fliggy_src.Probe(
+                        cfg,
+                        headless=bool(f_cfg.get("headless", True)),
+                        timeout=int(f_cfg.get("timeout", 25)),
+                    ) as probe:
+                        fails = 0
+                        for i, (dep, ret) in enumerate(cand, 1):
+                            try:
+                                r = probe.fetch(dep, ret)
+                            except fliggy_src.Blocked as e:
+                                print(f"  [{i}/{len(cand)}] {dep} → {ret}  被拦：{e}")
+                                print("  ⏸ 已停止飞猪核价（继续硬闯只会升级风控）。"
+                                      "把 config.yaml 里 fliggy.headless 改成 false，"
+                                      "手动过一次验证码再跑。")
+                                break
+                            except fliggy_src.NotRendered as e:
+                                fails += 1
+                                print(f"  [{i}/{len(cand)}] {dep} → {ret}  跳过：{e}")
+                                if fails >= 3:
+                                    print("  ⏸ 连续 3 组取不到价，疑似被短暂限流，本次放弃飞猪。"
+                                          "过十几分钟或换个网络再试。")
+                                    break
+                                continue
+                            except Exception as e:  # noqa: BLE001
+                                fails += 1
+                                print(f"  [{i}/{len(cand)}] {dep} → {ret}  失败："
+                                      f"{type(e).__name__}: {str(e)[:70]}")
+                                continue
+                            fails = 0
+                            fliggy_rows.append(r)
+                            store.add_offer(run_id, r)
+                            qr = (f"卡塔尔 ¥{r['qr_price']:,}" if r.get("qr_price")
+                                  else "卡塔尔未列出")
+                            print(f"  [{i}/{len(cand)}] {dep} → {ret}  "
+                                  f"全航司最低 ¥{r['all_min']:,}　{qr}")
+                            if i < len(cand):
+                                time.sleep(random.uniform(*delay))
+                except Exception as e:  # noqa: BLE001
+                    print(f"⚠️ 飞猪核价不可用（不影响其他结果）：{type(e).__name__}: {str(e)[:120]}")
+
     # ---- 报告 ----
     matrix = {(o["dep_date"], o["gap_days"]): o["price"] for o in offers}
     path = report.build(cfg, run_id, offers, matrix, prev_prices, hist_min, elapsed, failures,
-                        len(all_combos), window_info, verify_results, ota_rows)
+                        len(all_combos), window_info, verify_results, ota_rows, fliggy_rows)
     print(f"报告：{path}")
     print(f"库内累计 {store.stats()['offers']} 条报价 / {store.stats()['runs']} 次运行")
 

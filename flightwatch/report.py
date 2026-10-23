@@ -150,6 +150,7 @@ def build(
     window_info: dict[str, Any] | None = None,
     verify_results: list[dict[str, Any]] | None = None,
     ota_rows: list[dict[str, Any]] | None = None,
+    fliggy_rows: list[dict[str, Any]] | None = None,
 ) -> Path:
     route = cfg.route
     origin = route["origins"][0]
@@ -249,6 +250,49 @@ def build(
         if dom_cards
         else '<p style="color:#9ca3af;font-size:13px;">同程这次没取到报价（接口受限，或窗口内无票）。</p>'
     )
+
+    # ---- 飞猪核价（实际可订价）----
+    fliggy_html = ""
+    if fliggy_rows:
+        g_map = {(o["dep_date"], o["ret_date"]): o["price"] for o in ranked}
+        frs = []
+        for r in fliggy_rows:
+            qr = r.get("qr_price")
+            g = g_map.get((r["dep_date"], r["ret_date"]))
+            price_cell = (f'<b style="color:#0b6b3a;font-size:14px;">{_money(qr)}</b>'
+                          if qr else '<span style="color:#9ca3af;">未列出</span>')
+            if qr and g:
+                d = qr - g
+                if d > 0:
+                    diff = f'<span class="tag muted">比 Google 高 ¥{d:,}</span>'
+                elif d < 0:
+                    diff = f'<span class="tag drop">比 Google 低 ¥{-d:,}</span>'
+                else:
+                    diff = '<span class="tag">与 Google 持平</span>'
+            elif g:
+                diff = '<span class="tag muted">飞猪无卡塔尔舱位</span>'
+            else:
+                diff = "—"
+            stops = r.get("stops")
+            stops_txt = "—" if stops is None else ("直飞" if stops == 0 else f"{stops} 次中转")
+            frs.append(
+                f"<tr><td style='padding:9px 12px;white-space:nowrap'>"
+                f"{r['dep_date']} → {r['ret_date']}</td>"
+                f"<td style='padding:9px 12px;white-space:nowrap'>{price_cell}</td>"
+                f"<td style='padding:9px 12px;color:#374151;'>{_money(r.get('all_min'))}</td>"
+                f"<td style='padding:9px 12px;'>{diff}</td>"
+                f"<td style='padding:9px 12px;color:#6b7280;'>{stops_txt}</td></tr>"
+            )
+        fliggy_html = f"""
+<h2>飞猪核价 · 实际可订价 <span class="h2note">PC 站免登录，逐组打开搜索页读取</span></h2>
+<div class="sub" style="margin-top:-6px;margin-bottom:10px;">
+飞猪给的是<strong>能下单的往返含税价</strong>；Google 那一栏多为展示价，两者差异通常来自舱位、
+税费与缓存，下单前以飞猪/航司官网为准。
+</div>
+<table class="list"><thead><tr>
+  <th>组合</th><th>卡塔尔航空</th><th>全航司最低</th><th>对比 Google</th><th>中转</th>
+</tr></thead><tbody>{''.join(frs)}</tbody></table>
+"""
 
     # ---- 其他国内平台（抓不到价，只给状态和跳转）----
     ref = ranked[0] if ranked else ({"dep": ly_offers[0]["dep"], "ret": ly_offers[0]["ret"]}
@@ -406,6 +450,8 @@ border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
 
 <h2>国内平台 · Top 5 <span class="h2note">同程旅行 · 全航司 · 去程+返程单程日历合成</span></h2>
 {domestic_html}
+
+{fliggy_html}
 
 {other_html}
 

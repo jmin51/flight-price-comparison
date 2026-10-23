@@ -109,6 +109,16 @@ cn_ota:
   fliggy:
     enabled: false
 
+# ---------- 飞猪核价（PC 站免登录，真浏览器逐组核）----------
+fliggy:
+  enabled: true           # false = 跳过飞猪核价，回到只抓 Google + 同程
+  # ⚠️ 实测飞猪连续请求约 5 次后进入时间窗口限流（重开浏览器无效，等几分钟才恢复）
+  #    所以默认只核 2+2=4 组。想要 10 组就调成 5，但大概率后几组会被限流
+  probe_top_n: 2          # 国外 Top N + 国内 Top N，去重后最多 2N 组
+  headless: true          # 想看着它跑 / 手动过验证码时改 false
+  timeout: 35             # 单组等价格渲染的最长秒数
+  delay_seconds: [1.5, 3.0]   # 组间随机间隔，别调太小
+
 # ---------- 报告 ----------
 report:
   dir: "reports"
