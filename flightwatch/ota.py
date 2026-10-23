@@ -33,8 +33,8 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 PLATFORM_STATUS = {
     "ly": {"name": "同程旅行", "ok": True,
            "note": "单程价格日历（免登录，全航司最低价）"},
-    "trip": {"name": "携程国际", "ok": False,
-             "note": "Akamai whaleguard 按 IP 拦截（HTTP 432），时灵时不灵"},
+    "trip": {"name": "携程", "ok": False,
+             "note": "已改用国内站核价（flights.ctrip.com），此处不再重复抓取"},
     "fliggy": {"name": "飞猪", "ok": False,
                "note": "PC 站免登录已接入核价（限流约 5 次/轮），明细见上方「飞猪核价」区块"},
 }

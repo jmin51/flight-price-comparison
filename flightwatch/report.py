@@ -8,18 +8,19 @@ from typing import Any
 from urllib.parse import quote
 
 from .config import Config
+from .sources.ctrip import search_url as _ctrip_search_url
 
 
 def _money(p: int | None) -> str:
     return "—" if p is None else f"¥{p:,}"
 
 
-def _link_trip(dep: str, ret: str, o: str, d: str) -> str:
-    return (
-        "https://flights.trip.com/flights/showfarefirst?"
-        f"dcity={o.lower()}&acity={d.lower()}&ddate={dep}&rdate={ret}"
-        "&triptype=rt&class=y&quantity=1&locale=zh-CN&curr=CNY"
-    )
+def _link_ctrip(dep: str, ret: str) -> str:
+    """携程国内站往返搜索页（免登录，点开即看价）。
+
+    不再用携程国际 www.trip.com —— 那个被 Akamai whaleguard 按 IP 拦（HTTP 432）。
+    """
+    return _ctrip_search_url(dep, ret)
 
 
 def _link_sky(dep: str, ret: str, o: str, d: str) -> str:
@@ -200,7 +201,7 @@ def build(
           <div class="tags">{''.join(tags)}</div>
           <div class="links">
             <a href="{o['deep_link']}" target="_blank">Google Flights</a>
-            <a href="{_link_trip(o['dep_date'], o['ret_date'], origin, dest)}" target="_blank">携程国际</a>
+            <a href="{_link_ctrip(o['dep_date'], o['ret_date'])}" target="_blank">携程</a>
             <a href="{_link_sky(o['dep_date'], o['ret_date'], origin, dest)}" target="_blank">天巡</a>
             <a href="{_link_tc(o['dep_date'], o['ret_date'], origin, dest)}" target="_blank">同程旅行</a>
             <a href="{_link_fliggy(o['dep_date'], o['ret_date'])}" target="_blank">飞猪</a>
@@ -261,7 +262,7 @@ def build(
           <div class="tags">{''.join(t for t in tags if t)}</div>
           <div class="links">
             <a href="{_link_tc(dep, ret, origin, dest)}" target="_blank">同程旅行</a>
-            <a href="{_link_trip(dep, ret, origin, dest)}" target="_blank">携程国际</a>
+            <a href="{_link_ctrip(dep, ret)}" target="_blank">携程</a>
             <a href="{_link_fliggy(dep, ret)}" target="_blank">飞猪</a>
           </div>
         </div>"""
@@ -398,13 +399,13 @@ def build(
         )
     for r in (ota_rows or []):
         key = r.get("key")
-        if key not in ("trip", "fliggy"):
+        if key != "fliggy":      # 携程已单独成块，这里只留飞猪
             continue
         if ref:
             dep = ref.get("dep_date") or ref.get("dep") or ""
             ret = ref.get("ret_date") or ref.get("ret") or ""
             if key == "trip":
-                link = f'<a href="{_link_trip(dep, ret, origin, dest)}" target="_blank">打开携程</a>'
+                link = f'<a href="{_link_ctrip(dep, ret)}" target="_blank">打开携程</a>'
             else:
                 link = f'<a href="{_link_fliggy(dep, ret)}" target="_blank">打开飞猪</a>'
             link += f' <span style="color:#9ca3af;">（按 {dep} → {ret}）</span>'
@@ -421,7 +422,7 @@ def build(
     other_html = ""
     if other_trs:
         other_html = f"""
-<h2>其他国内平台 <span class="h2note">同程为全航司参考价；携程国际/天巡等只给跳转</span></h2>
+<h2>其他国内平台 <span class="h2note">同程为全航司参考价；天巡等只给跳转</span></h2>
 <table class="list"><thead><tr>
   <th>平台</th><th>价格</th><th>说明</th><th>手动查看</th>
 </tr></thead><tbody>{''.join(other_trs)}</tbody></table>
