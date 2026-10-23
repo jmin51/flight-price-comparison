@@ -36,7 +36,7 @@ PLATFORM_STATUS = {
     "trip": {"name": "携程国际", "ok": False,
              "note": "Akamai whaleguard 按 IP 拦截（HTTP 432），时灵时不灵"},
     "fliggy": {"name": "飞猪", "ok": False,
-               "note": "mtop 需 UMID 设备指纹，且搜索页要求登录"},
+               "note": "PC 站免登录已接入核价（限流约 5 次/轮），明细见上方「飞猪核价」区块"},
 }
 
 
