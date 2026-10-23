@@ -172,7 +172,8 @@ def main() -> int:
     hist_min: dict[tuple[str, str], int] = {}
     for o in offers:
         m = store._conn.execute(
-            "SELECT MIN(price) AS p FROM offers WHERE dep_date=? AND ret_date=? AND run_id<?",
+            "SELECT MIN(price) AS p FROM offers WHERE dep_date=? AND ret_date=? "
+            "AND run_id<? AND source='google'",
             (o["dep_date"], o["ret_date"], run_id),
         ).fetchone()
         if m and m["p"] is not None:
@@ -231,7 +232,22 @@ def main() -> int:
         print("\n抓取中国平台最低价…")
         try:
             ota_res = ota_mod.fetch(cfg, window_info)
-            ota_rows = ota_mod.summary(ota_res)
+            ota_rows = ota_mod.summary(ota_res, top_n=5)
+
+            # 同程报价落库（source='ly'），供后续历史对比与面板使用
+            ly_offers = (ota_res.get("ly") or {}).get("offers") or []
+            saved = 0
+            for o in ly_offers:
+                try:
+                    o["currency"] = o.get("currency") or "CNY"
+                    o["carriers"] = o.get("carriers") or "全航司最低"
+                    store.add_offer(run_id, o)
+                    saved += 1
+                except Exception:  # noqa: BLE001
+                    continue
+            if saved:
+                print(f"  同程 {saved} 个组合已入库")
+
             for r in ota_rows:
                 if r.get("price"):
                     if best is None:

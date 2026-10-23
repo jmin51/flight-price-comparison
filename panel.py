@@ -208,6 +208,7 @@ def _db_ro() -> sqlite3.Connection:
 def _metrics() -> dict:
     out = {
         "current": None,
+        "domestic": None,
         "hist": None,
         "offers": 0,
         "runs": 0,
@@ -227,7 +228,7 @@ def _metrics() -> dict:
 
         row = conn.execute(
             "SELECT dep_date, ret_date, price FROM offers WHERE price IS NOT NULL "
-            "ORDER BY price ASC LIMIT 1"
+            "AND source='google' ORDER BY price ASC LIMIT 1"
         ).fetchone()
         if row:
             out["hist"] = {"price": int(row["price"]), "dep": row["dep_date"], "ret": row["ret_date"]}
@@ -248,11 +249,20 @@ def _metrics() -> dict:
             }
             best = conn.execute(
                 "SELECT dep_date, ret_date, MIN(price) p FROM offers WHERE run_id=? "
-                "AND price IS NOT NULL GROUP BY dep_date, ret_date ORDER BY p ASC LIMIT 1",
+                "AND price IS NOT NULL AND source='google' "
+                "GROUP BY dep_date, ret_date ORDER BY p ASC LIMIT 1",
                 (run["id"],),
             ).fetchone()
             if best:
                 out["current"] = {"price": int(best["p"]), "dep": best["dep_date"], "ret": best["ret_date"]}
+            dom = conn.execute(
+                "SELECT dep_date, ret_date, MIN(price) p FROM offers WHERE run_id=? "
+                "AND price IS NOT NULL AND source='ly' "
+                "GROUP BY dep_date, ret_date ORDER BY p ASC LIMIT 1",
+                (run["id"],),
+            ).fetchone()
+            if dom:
+                out["domestic"] = {"price": int(dom["p"]), "dep": dom["dep_date"], "ret": dom["ret_date"]}
     except sqlite3.Error:
         pass
     finally:

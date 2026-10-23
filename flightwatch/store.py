@@ -124,25 +124,37 @@ class Store:
         row = self._conn.execute(sql, args).fetchone()
         return int(row["id"]) if row else None
 
-    def prices_of_run(self, run_id: int) -> dict[tuple[str, str], int]:
+    def prices_of_run(self, run_id: int, source: str = "google") -> dict[tuple[str, str], int]:
         rows = self._conn.execute(
             """SELECT dep_date, ret_date, MIN(price) AS p FROM offers
-               WHERE run_id=? AND price IS NOT NULL GROUP BY dep_date, ret_date""",
-            (run_id,),
+               WHERE run_id=? AND price IS NOT NULL AND source=?
+               GROUP BY dep_date, ret_date""",
+            (run_id, source),
         ).fetchall()
         return {(r["dep_date"], r["ret_date"]): int(r["p"]) for r in rows}
 
-    def top_combos(self, limit: int) -> list[tuple[str, str]]:
+    def top_combos(self, limit: int, source: str = "google") -> list[tuple[str, str]]:
         run_id = self.last_run_id()
         if not run_id:
             return []
         rows = self._conn.execute(
             """SELECT dep_date, ret_date, MIN(price) AS p FROM offers
-               WHERE run_id=? AND price IS NOT NULL
+               WHERE run_id=? AND price IS NOT NULL AND source=?
                GROUP BY dep_date, ret_date ORDER BY p ASC LIMIT ?""",
-            (run_id, limit),
+            (run_id, source, limit),
         ).fetchall()
         return [(r["dep_date"], r["ret_date"]) for r in rows]
+
+    def best_of_run(self, run_id: int, source: str = "google") -> dict[str, Any] | None:
+        row = self._conn.execute(
+            """SELECT dep_date, ret_date, MIN(price) AS p FROM offers
+               WHERE run_id=? AND price IS NOT NULL AND source=?
+               GROUP BY dep_date, ret_date ORDER BY p ASC LIMIT 1""",
+            (run_id, source),
+        ).fetchone()
+        if not row or row["p"] is None:
+            return None
+        return {"price": int(row["p"]), "dep": row["dep_date"], "ret": row["ret_date"]}
 
     def historical_min(self, dep: str, ret: str) -> int | None:
         row = self._conn.execute(

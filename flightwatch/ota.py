@@ -255,8 +255,12 @@ def fetch(cfg: Any, window: dict[str, Any] | None = None) -> dict[str, Any]:
     return result
 
 
-def summary(result: dict[str, Any]) -> list[dict[str, Any]]:
-    """把 fetch() 的结果压成报告要用的表行。"""
+def summary(result: dict[str, Any], top_n: int = 5) -> list[dict[str, Any]]:
+    """把 fetch() 的结果压成报告要用的表行。
+
+    每家平台额外带一个 `offers` 列表（按价升序，最多 top_n 条），
+    报告用它渲染「国内平台 Top5」；`price/dep/ret` 保留为最低那一条，兼容旧调用。
+    """
     rows: list[dict[str, Any]] = []
     for key in ("ly", "trip", "fliggy"):
         rec = result.get(key)
@@ -265,21 +269,32 @@ def summary(result: dict[str, Any]) -> list[dict[str, Any]]:
             rows.append({
                 "key": key, "name": meta["name"], "price": None,
                 "status": "未启用" if key != "ly" else "未尝试",
-                "note": meta["note"], "dep": "", "ret": "",
+                "note": meta["note"], "dep": "", "ret": "", "offers": [], "count": 0,
             })
             continue
         offers = rec.get("offers") or []
-        if offers:
-            b = offers[0]
+        top = [
+            {
+                "dep": o["dep_date"],
+                "ret": o["ret_date"],
+                "price": int(o["price"]),
+                "gap": o.get("gap_days"),
+                "note": o.get("note", ""),
+            }
+            for o in offers[: max(1, int(top_n))]
+        ]
+        if top:
             rows.append({
                 "key": key, "name": rec.get("name", meta["name"]),
-                "price": b["price"], "dep": b["dep_date"], "ret": b["ret_date"],
+                "price": top[0]["price"], "dep": top[0]["dep"], "ret": top[0]["ret"],
                 "status": "正常", "note": rec.get("note", ""),
+                "offers": top, "count": len(offers),
             })
         else:
             rows.append({
                 "key": key, "name": rec.get("name", meta["name"]), "price": None,
                 "dep": "", "ret": "",
                 "status": "受限", "note": rec.get("note") or meta["note"],
+                "offers": [], "count": 0,
             })
     return rows

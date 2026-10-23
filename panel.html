@@ -98,17 +98,17 @@
 
   <div class="metrics">
     <div class="metric">
-      <p class="k">当前最低</p>
+      <p class="k">国外最低 · Google</p>
       <p class="v green" id="mCurrent">—</p>
       <p class="d" id="mCurrentDate">—</p>
     </div>
     <div class="metric">
-      <p class="k">同程最低</p>
+      <p class="k">国内最低 · 同程</p>
       <p class="v" id="mOta">—</p>
       <p class="d" id="mOtaNote">—</p>
     </div>
     <div class="metric">
-      <p class="k">历史最低</p>
+      <p class="k">国外历史最低</p>
       <p class="v" id="mHist">—</p>
       <p class="d" id="mHistDate">—</p>
     </div>
@@ -184,10 +184,10 @@ function renderStatus(s) {
   $('mOffers').textContent = m.offers != null ? m.offers.toLocaleString('zh-CN') : '—';
   $('mRuns').textContent = m.runs != null ? `${m.runs} 次运行` : '—';
 
-  const ota = s.ota || null;
-  $('mOta').textContent = ota ? money(ota.price) : '—';
-  $('mOtaNote').textContent = ota
-    ? `${shortDate(ota.dep)} → ${shortDate(ota.ret)}${ota.compare ? ' · ' + ota.compare : ''}`
+  const dom = m.domestic || (s.ota ? { price: s.ota.price, dep: s.ota.dep, ret: s.ota.ret } : null);
+  $('mOta').textContent = dom ? money(dom.price) : '—';
+  $('mOtaNote').textContent = dom
+    ? `${shortDate(dom.dep)} → ${shortDate(dom.ret)} · 单程合成价`
     : '还没抓到同程数据';
 
   const pr = s.progress || {};

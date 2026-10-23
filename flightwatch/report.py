@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import html
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -92,6 +92,10 @@ h1 { font-size:22px; margin:0 0 4px; letter-spacing:-.3px; }
 .tag { font-size:11px; padding:2px 7px; border-radius:999px; background:#f1f5f3; color:#374151; }
 .tag.newlow { background:#0b6b3a; color:#fff; }
 .tag.drop { background:#dcfce7; color:#166534; }
+.tag.muted { background:#f3f4f6; color:#6b7280; }
+.card.domestic .price { color:#374151; }
+.card.domestic { background:#fcfcfd; }
+.h2note { font-size:12px; font-weight:400; color:#9ca3af; margin-left:8px; }
 .links { margin-top:12px; display:flex; gap:10px; font-size:12px; flex-wrap:wrap; }
 .links a { color:#2563eb; text-decoration:none; }
 .links a:hover { text-decoration:underline; }
@@ -200,6 +204,87 @@ def build(
         </div>"""
         )
 
+    # ---- 国内平台 Top5（同程）----
+    ly_row = next((r for r in (ota_rows or []) if r.get("key") == "ly"), None)
+    ly_offers = (ly_row or {}).get("offers") or []
+    dom_best = ly_offers[0]["price"] if ly_offers else None
+
+    dom_cards = []
+    for i, o in enumerate(ly_offers[: cfg.alerts.get("top_n", 5)], 1):
+        gap = o.get("gap")
+        if gap is None:
+            try:
+                gap = (date.fromisoformat(o["ret"]) - date.fromisoformat(o["dep"])).days
+            except ValueError:
+                gap = None
+        diff = ""
+        if best_price:
+            d = o["price"] - best_price
+            word = "高" if d > 0 else "低"
+            diff = f'<span class="tag muted">比 Google 最低 {word} ¥{abs(d):,}</span>'
+        tags = [
+            '<span class="tag">同程旅行</span>',
+            f'<span class="tag">{gap} 天</span>' if gap else "",
+            '<span class="tag muted">单程合成价 · 非同一航司</span>',
+            diff,
+        ]
+        dom_cards.append(
+            f"""
+        <div class="card domestic">
+          <div class="rank">#{i}</div>
+          <div class="price">{_money(o['price'])} <small>往返含税</small></div>
+          <div class="dates">{o['dep']} → {o['ret']}</div>
+          <div class="route">去程最低 + 返程最低相加，去返可能不是同一家航司</div>
+          <div class="tags">{''.join(t for t in tags if t)}</div>
+          <div class="links">
+            <a href="{_link_tc(o['dep'], o['ret'], origin, dest)}" target="_blank">同程旅行</a>
+            <a href="{_link_trip(o['dep'], o['ret'], origin, dest)}" target="_blank">携程国际</a>
+            <a href="{_link_fliggy(o['dep'], o['ret'])}" target="_blank">飞猪</a>
+          </div>
+        </div>"""
+        )
+
+    domestic_html = (
+        '<div class="cards">' + "".join(dom_cards) + "</div>"
+        if dom_cards
+        else '<p style="color:#9ca3af;font-size:13px;">同程这次没取到报价（接口受限，或窗口内无票）。</p>'
+    )
+
+    # ---- 其他国内平台（抓不到价，只给状态和跳转）----
+    ref = ranked[0] if ranked else ({"dep": ly_offers[0]["dep"], "ret": ly_offers[0]["ret"]}
+                                    if ly_offers else None)
+    other_trs = []
+    for r in (ota_rows or []):
+        key = r.get("key")
+        if key not in ("trip", "fliggy"):
+            continue
+        if ref:
+            dep = ref.get("dep_date") or ref.get("dep") or ""
+            ret = ref.get("ret_date") or ref.get("ret") or ""
+            if key == "trip":
+                link = f'<a href="{_link_trip(dep, ret, origin, dest)}" target="_blank">打开携程</a>'
+            else:
+                link = f'<a href="{_link_fliggy(dep, ret)}" target="_blank">打开飞猪</a>'
+            link += f' <span style="color:#9ca3af;">（按 {dep} → {ret}）</span>'
+        else:
+            link = "—"
+        other_trs.append(
+            f"<tr><td style='padding:9px 12px;'><b>{html.escape(r.get('name') or '')}</b></td>"
+            f"<td style='padding:9px 12px;color:#9ca3af;'>未取价</td>"
+            f"<td style='padding:9px 12px;color:#6b7280;font-size:12px;'>"
+            f"{html.escape(r.get('note') or '')}</td>"
+            f"<td style='padding:9px 12px;'>{link}</td></tr>"
+        )
+
+    other_html = ""
+    if other_trs:
+        other_html = f"""
+<h2>其他国内平台 <span class="h2note">反爬拦截，只提供跳转，不提供价格</span></h2>
+<table class="list"><thead><tr>
+  <th>平台</th><th>价格</th><th>说明</th><th>手动查看</th>
+</tr></thead><tbody>{''.join(other_trs)}</tbody></table>
+"""
+
     # ---- 价格矩阵 ----
     dep_dates = sorted({d for (d, _g) in matrix.keys()})
     gaps = sorted({g for (_d, g) in matrix.keys()})
@@ -294,58 +379,6 @@ border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
 <tbody>{''.join(vrows)}</tbody></table>
 """
 
-    # ---- 中国平台最低价区 ----
-    ota_html = ""
-    if ota_rows:
-        trs = []
-        for r in ota_rows:
-            price = r.get("price")
-            if price:
-                pcell = f'<b style="color:#0b6b3a;font-size:15px;">¥{price:,}</b>'
-                if best_price:
-                    d = price - best_price
-                    if d < 0:
-                        pcell += f' <span class="tag drop">比 Google 低 ¥{-d:,}</span>'
-                    elif d > 0:
-                        pcell += f' <span class="tag">比 Google 高 ¥{d:,}</span>'
-                    else:
-                        pcell += ' <span class="tag">与 Google 持平</span>'
-                dcell = f'{r["dep"]} → {r["ret"]}'
-                stcell = '<span class="tag newlow">正常</span>'
-            else:
-                pcell = '<span style="color:#9ca3af;">—</span>'
-                dcell = "—"
-                stcell = f'<span class="tag">{html.escape(r.get("status") or "未取到")}</span>'
-            trs.append(
-                f'<tr>'
-                f'<td style="padding:9px 8px;border-bottom:1px solid #f3f4f6;white-space:nowrap">'
-                f'<b>{html.escape(r.get("name") or "")}</b></td>'
-                f'<td style="padding:9px 8px;border-bottom:1px solid #f3f4f6">{pcell}</td>'
-                f'<td style="padding:9px 8px;border-bottom:1px solid #f3f4f6;'
-                f'white-space:nowrap">{dcell}</td>'
-                f'<td style="padding:9px 8px;border-bottom:1px solid #f3f4f6">{stcell}</td>'
-                f'<td style="padding:9px 8px;border-bottom:1px solid #f3f4f6;color:#6b7280;'
-                f'font-size:12px;">{html.escape(r.get("note") or "")}</td>'
-                f'</tr>'
-            )
-        ota_html = f"""
-<h2>中国平台最低价</h2>
-<div class="sub" style="margin-bottom:10px;">
-同程走国际站价格日历接口（免登录）拿到的<strong>全航司</strong>最低价，往返由去程+返程两张单程日历合成；
-携程/飞猪目前被反爬拦住，只显示状态。点下方链接可人工核价。
-</div>
-<table style="width:100%;border-collapse:collapse;font-size:13px;background:#fff;
-border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
-<thead><tr style="background:#f9fafb;color:#6b7280;font-size:12px;">
-<th style="padding:8px;text-align:left;">平台</th>
-<th style="padding:8px;text-align:left;">最低往返（含税）</th>
-<th style="padding:8px;text-align:left;">去程 → 返程</th>
-<th style="padding:8px;text-align:left;">状态</th>
-<th style="padding:8px;text-align:left;">说明</th>
-</tr></thead>
-<tbody>{''.join(trs)}</tbody></table>
-"""
-
     # ---- 降级提示（Google 无数据时）----
     notice_html = ""
     if not ranked:
@@ -353,7 +386,7 @@ border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
             '<div style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;'
             'padding:10px 14px;border-radius:8px;margin:14px 0;font-size:13px;line-height:1.7;">'
             '<b>⚠️ 本次没有取到 Google Flights 任何价格</b>（通常是梯子未开 / 访问不了 google.com）。'
-            '下面只显示中国平台的最低价格，Top 5 卡片与价格矩阵为空。'
+            '下面「国外平台 Top 5」与价格矩阵为空，「国内平台 Top 5」仍可用。'
             '开启梯子后重新扫描即可恢复正常。</div>'
         )
 
@@ -364,13 +397,17 @@ border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
 <div class="sub">扫描时间 {now}　·　窗口 {win_start} ~ {win_last}{note_html}　·　
 间隔 {"/".join(map(str, cfg.window['gap_days']))} 天　·　
 有效组合 {len(ranked)}/{total_combos}　·　耗时 {elapsed:.0f}s　·　
-当前最低 <b>{_money(best_price)}</b></div>
+国外最低 <b>{_money(best_price)}</b>　·　国内最低 <b>{_money(dom_best)}</b></div>
 
 {notice_html}
 
-<div class="cards">{''.join(cards) if cards else '<p>本次没有取到任何价格。</p>'}</div>
+<h2>国外平台 · Top 5 <span class="h2note">Google Flights · 卡塔尔航空 · 多哈中转 · 最多 1 次中转</span></h2>
+<div class="cards">{''.join(cards) if cards else '<p style="color:#9ca3af;font-size:13px;">本次没有取到 Google 价格。</p>'}</div>
 
-{ota_html}
+<h2>国内平台 · Top 5 <span class="h2note">同程旅行 · 全航司 · 去程+返程单程日历合成</span></h2>
+{domestic_html}
+
+{other_html}
 
 {verify_html}
 
@@ -396,7 +433,9 @@ border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
 
 <footer>
 数据源：Google Flights（fast-flights 直连，按卡塔尔航空 + 最多 1 次中转过滤）· 价格为往返含税总价。<br>
-中国平台最低价：同程旅行国际站价格日历（全航司，不限卡塔尔）· 携程被 Akamai 拦截、飞猪需设备指纹，暂不参与。<br>
+国内平台：同程旅行国际站价格日历（全航司，不限卡塔尔）· 往返价 = 去程最低 + 返程最低，
+<strong>去返程不保证是同一家航司</strong>，与 Google 的「同一航司往返」不是同一口径，跨区差价仅供参考。<br>
+携程被 Akamai 拦截、飞猪需设备指纹、天巡有 PerimeterX 验证，均只提供跳转链接。<br>
 🟢 = 该组合创历史新低。
 </footer>
 <script>{JS}</script>
